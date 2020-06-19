@@ -24,3 +24,5 @@
 void show_usage(char **);
 int benchmark(int*, char*);
 
+/* typedefs */
+typedef std::chrono::high_resolution_clock Clock;

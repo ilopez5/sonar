@@ -2,11 +2,12 @@
 #include <iostream>
 #include <string.h>
 #include <unistd.h>
+#include <chrono>
 //#include <mpi.h>
 #include "sonar.h"
 
 /*
- *	main - primary driver for <unnamed> benchmark
+ *	main - primary driver for Sonar benchmark
  */
 int main(int argc, char** argv)
 {
@@ -17,7 +18,8 @@ int main(int argc, char** argv)
 	int workload_type = WONLY;
 	int compute_intensity = SLEEP;
 	int sleep_time = 10;
-	char *output_file = NULL;
+	char *output_file = (char *)"./sonar-log.txt";
+	int io_size = 10;
 
 	// check args
 	if (argc == 1) {
@@ -28,7 +30,7 @@ int main(int argc, char** argv)
 	// initialize MPI
 	//MPI_Init(&argc, &argv);
 
-	while ((opt = getopt(argc, argv, "h:n:w:c:s:p:o:")) != EOF) {
+	while ((opt = getopt(argc, argv, "h:n:w:c:s:p:o:S:")) != EOF) {
 		switch (opt) {
 			case 'h':{
 				show_usage(argv);
@@ -61,6 +63,10 @@ int main(int argc, char** argv)
 				output_file = optarg;
 				break;
 			}
+			case 'S':{
+				io_size = atoi(optarg);
+				break;
+			}
 			default:{
 				show_usage(argv);
 				break;
@@ -69,7 +75,15 @@ int main(int argc, char** argv)
 	}
 	
 	// store parameters
-	int params[] = {nprocs, nphases, workload_type, compute_intensity, sleep_time};
+	int params[] = 
+		{
+			nprocs, 
+			nphases, 
+			workload_type, 
+			compute_intensity, 
+			sleep_time, 
+			io_size
+		};
 
 	// run benchmark
 	rv = benchmark(params, output_file);
@@ -78,6 +92,9 @@ int main(int argc, char** argv)
 	return 0;
 }
 
+/*
+ *	benchmark - perform I/O dump phases as well as compute phases
+ */
 int benchmark(int *params, char* output_file)
 {
 	// config vars
@@ -86,17 +103,59 @@ int benchmark(int *params, char* output_file)
 	int workload_type = params[2];
 	int compute_intensity = params[3];
 	int sleep_time = params[4];
+	int io_size = params[5];
+
+	// run vars
+	FILE *fp, *log;
 	int phase = 0;
 	
 	// run workloads
 	while (phase < nphases) {
-		// read
-		if (!(workload_type % 2)) {
-			// perform read
+		
+		// write dump
+		if (workload_type % 2) {
+
+			// start timer
+			auto wstart = Clock::now();
+	/*		
+			// open/create dump file
+			if (!(fp = fopen(dump_file, "w+"))) {
+				std::cerr << "Failed to open/create dump file: " << output_file << "\n";
+				return -1;
+			}
+
+			// TODO: randomly generate buffer contents
+			io_buffer = generateRandomBuffer(io_size);
+
+			// write to file
+			if (!(rv = fwrite(io_buffer, io_size, 1, fp))) {
+				std::cerr << "Failed to write to: " << output_file << "\n";
+				return -1;
+			}
+	*/		
+			// end timer
+			auto wend = Clock::now();
+
+			std::cout << "Timer Test: " << std::chrono::duration_cast<std::chrono::nanoseconds>(wend-wstart).count() << " nanoseconds\n";
+	/*
+			// open log file
+			if (!(log = fopen(output_file, "w+"))) {
+				std::cerr << "Failed to open/create log file\n";
+				return -1;
+			}
+
+			// write to log file
+			if (!(rv = fwrite(log_buffer, sizeof(log_buffer), 1, log))) {
+				std::cerr << "Failed to log timings\n";
+				return -1;
+			}
+
+			fclose(log);
+	*/
 		}
 
-		// write
-		if (workload_type % 2) {
+		// read dump
+		if (!(workload_type % 2)) {
 			// perform reads
 		}
 
@@ -118,6 +177,9 @@ int benchmark(int *params, char* output_file)
 				break;
 			}
 		}
+
+		// move to next phase
+		phase++;
 	}
 
 	return 0;
@@ -146,5 +208,6 @@ void show_usage(char** argv)
 				<< "\t\t\t\t2 - Arithmetic\n"
 				<< "\t\t\t\t3 - Intense\n"
 				<< "\t-s,\t\tSleep time (compute intensity=1) [10s]\n"
-				<< "\t-o,\t\tOutput file logs to [sonar-log.txt]\n";
+				<< "\t-o,\t\tOutput file logs to [sonar-log.txt]\n"
+				<< "\t-S,\t\tSize of I/O request (in MB) [10]\n";
 }
