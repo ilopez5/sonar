@@ -3,32 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 //#include <mpi.h>
-
-/* macros */
-#define MAXPROCS 32
-#define MINPROCS 1
-#define MAX_WORKLOAD 5
-#define MIN_WORKLOAD 0
-#define MAX_INTENSITY 3
-#define MIN_INTENSITY 0
-
-// defines workload types
-#define RONLY 0
-#define WONLY 1
-#define RCOMPUTE 2
-#define WCOMPUTE 3
-#define WRONLY 4
-#define WRCOMPUTE 5
-
-// defines compute types
-#define NOCOMPUTE 0
-#define SLEEP 1
-#define ARITHMETIC 2
-#define INTENSE 3
-
-/* function prototypes */
-void show_usage(char **);
-int benchmark(int*);
+#include "sonar.h"
 
 /*
  *	main - primary driver for <unnamed> benchmark
@@ -42,15 +17,21 @@ int main(int argc, char** argv)
 	int workload_type = WONLY;
 	int compute_intensity = SLEEP;
 	int sleep_time = 10;
+	char *output_file = NULL;
+
+	// check args
+	if (argc == 1) {
+		show_usage(argv);
+		return 0;
+	}
 
 	// initialize MPI
 	//MPI_Init(&argc, &argv);
 
-	while ((opt = getopt(argc, argv, ":h:n:w:c:s:p:")) != EOF) {
+	while ((opt = getopt(argc, argv, "h:n:w:c:s:p:o:")) != EOF) {
 		switch (opt) {
 			case 'h':{
 				show_usage(argv);
-				exit(0);
 				break;
 			}
 			case 'n':{
@@ -76,6 +57,10 @@ int main(int argc, char** argv)
 				nphases = atoi(optarg);
 				break;
 			}
+			case 'o':{
+				output_file = optarg;
+				break;
+			}
 			default:{
 				show_usage(argv);
 				break;
@@ -87,13 +72,13 @@ int main(int argc, char** argv)
 	int params[] = {nprocs, nphases, workload_type, compute_intensity, sleep_time};
 
 	// run benchmark
-	rv = benchmark(params);
+	rv = benchmark(params, output_file);
 
 	//MPI_Finalize();
 	return 0;
 }
 
-int benchmark(int *params)
+int benchmark(int *params, char* output_file)
 {
 	// config vars
 	int nprocs = params[0];
@@ -102,7 +87,7 @@ int benchmark(int *params)
 	int compute_intensity = params[3];
 	int sleep_time = params[4];
 	int phase = 0;
-
+	
 	// run workloads
 	while (phase < nphases) {
 		// read
@@ -160,5 +145,6 @@ void show_usage(char** argv)
 				<< "\t\t\t\t1 - [Sleep]\n"
 				<< "\t\t\t\t2 - Arithmetic\n"
 				<< "\t\t\t\t3 - Intense\n"
-				<< "\t-s,\t\tSleep time (compute intensity=1) [10s]\n";
+				<< "\t-s,\t\tSleep time (compute intensity=1) [10s]\n"
+				<< "\t-o,\t\tOutput file logs to [sonar-log.txt]\n";
 }
