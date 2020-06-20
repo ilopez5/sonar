@@ -30,7 +30,8 @@ int main(int argc, char** argv)
 	// initialize MPI
 	//MPI_Init(&argc, &argv);
 
-	while ((opt = getopt(argc, argv, "h:n:w:c:s:p:o:S:")) != EOF) {
+	// parse given parameters
+	while ((opt = getopt(argc, argv, "h::n:w:c:s:p:o:S:")) != EOF) {
 		switch (opt) {
 			case 'h':{
 				show_usage(argv);
@@ -85,103 +86,41 @@ int main(int argc, char** argv)
 			io_size
 		};
 
-	// run benchmark
-	rv = benchmark(params, output_file);
-
-	//MPI_Finalize();
-	return 0;
-}
-
-/*
- *	benchmark - perform I/O dump phases as well as compute phases
- */
-int benchmark(int *params, char* output_file)
-{
-	// config vars
-	int nprocs = params[0];
-	int nphases = params[1];
-	int workload_type = params[2];
-	int compute_intensity = params[3];
-	int sleep_time = params[4];
-	int io_size = params[5];
-
-	// run vars
-	FILE *fp, *log;
-	int phase = 0;
-	
-	// run workloads
-	while (phase < nphases) {
-		
-		// write dump
-		if (workload_type % 2) {
-
-			// start timer
-			auto wstart = Clock::now();
-	/*		
-			// open/create dump file
-			if (!(fp = fopen(dump_file, "w+"))) {
-				std::cerr << "Failed to open/create dump file: " << output_file << "\n";
-				return -1;
-			}
-
-			// TODO: randomly generate buffer contents
-			io_buffer = generateRandomBuffer(io_size);
-
-			// write to file
-			if (!(rv = fwrite(io_buffer, io_size, 1, fp))) {
-				std::cerr << "Failed to write to: " << output_file << "\n";
-				return -1;
-			}
-	*/		
-			// end timer
-			auto wend = Clock::now();
-
-			std::cout << "Timer Test: " << std::chrono::duration_cast<std::chrono::nanoseconds>(wend-wstart).count() << " nanoseconds\n";
-	/*
-			// open log file
-			if (!(log = fopen(output_file, "w+"))) {
-				std::cerr << "Failed to open/create log file\n";
-				return -1;
-			}
-
-			// write to log file
-			if (!(rv = fwrite(log_buffer, sizeof(log_buffer), 1, log))) {
-				std::cerr << "Failed to log timings\n";
-				return -1;
-			}
-
-			fclose(log);
-	*/
+	// run workload
+	switch (workload_type) {
+		case RONLY:{
+			read_dump(params, output_file, 0);
+			break;
 		}
-
-		// read dump
-		if (!(workload_type % 2)) {
-			// perform reads
+		case RCOMPUTE:{
+			read_dump(params, output_file, 1);
+			break;
 		}
-
-		// compute
-		switch (compute_intensity) {
-			case NOCOMPUTE:{
-				break;
-			}
-			case ARITHMETIC:{
-				// do simple calculations
-				break;
-			}
-			case INTENSE:{
-				// do intense calculations
-				break;
-			}
-			default:{
-				sleep(sleep_time);
-				break;
-			}
+		case WONLY:{
+			write_dump(params, output_file, 0);
+			break;
 		}
-
-		// move to next phase
-		phase++;
+		case WCOMPUTE:{
+			write_dump(params, output_file, 1);
+			break;
+		}
+		case WRONLY:{
+			write_dump(params, output_file, 0);
+			read_dump(params, output_file, 0);
+			break;
+		}
+		case WRCOMPUTE:{
+			write_dump(params, output_file, 1);
+			read_dump(params, output_file, 1);
+			break;
+		}
+		default:{
+			write_dump(params, output_file, 1);
+			break;
+		}
 	}
 
+	//MPI_Finalize();
 	return 0;
 }
 
@@ -210,4 +149,126 @@ void show_usage(char** argv)
 				<< "\t-s,\t\tSleep time (compute intensity=1) [10s]\n"
 				<< "\t-o,\t\tOutput file logs to [sonar-log.txt]\n"
 				<< "\t-S,\t\tSize of I/O request (in MB) [10]\n";
+}
+
+/*
+ *	read_dump - perform I/O dump phase for read tests
+ */
+void read_dump(int *params, char* output_file, int compute_on)
+{
+	int nphases = params[1];
+	int phase = 0;
+
+	while (phase < nphases) {
+		std::cout << "Dump Phase: " << phase << "\n";
+
+		// start timer
+		auto start = Clock::now();
+		
+		// TODO: READ STUFF
+
+		// end timer
+		auto end = Clock::now();
+		auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
+		std::cout << "Time elapsed [R]: " << duration << " nanoseconds\n";
+
+		if (compute_on)
+			compute(params[3], params[4]);
+
+		// step to next iteration
+		phase++;
+	} // end of while loop
+	
+	return;
+}
+
+/*
+ *	write_dump - perform I/O dump phase for write tests
+ */
+void write_dump(int *params, char* output_file, int compute_on)
+{
+	int nphases = params[1];
+	int phase = 0;
+
+	while (phase < nphases) {
+		std::cout << "Dump Phase: " << phase << "\n";
+
+		// start timer
+		auto start = Clock::now();
+
+		// TODO: WRITE STUFF
+			/*		
+			// open/create dump file
+			if (!(fp = fopen(dump_file, "w+"))) {
+				std::cerr << "Failed to open/create dump file: " << output_file << "\n";
+				return -1;
+			}
+
+			// TODO: randomly generate buffer contents
+			io_buffer = generateRandomBuffer(io_size);
+
+			// write to file
+			if (!(rv = fwrite(io_buffer, io_size, 1, fp))) {
+				std::cerr << "Failed to write to: " << output_file << "\n";
+				return -1;
+			}
+			*/
+
+		// io_buffer = generateRandomBuffer(io_size);
+			/*
+			// open log file
+			if (!(log = fopen(output_file, "w+"))) {
+				std::cerr << "Failed to open/create log file\n";
+				return -1;
+			}
+
+			// write to log file
+			if (!(rv = fwrite(log_buffer, sizeof(log_buffer), 1, log))) {
+				std::cerr << "Failed to log timings\n";
+				return -1;
+			}
+
+			fclose(log);
+			*/
+
+
+		// end timer
+		auto end = Clock::now();
+		auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
+		std::cout << "Time elapsed [W]: " << duration << " nanoseconds\n";
+
+		if (compute_on)
+			compute(params[3], params[4]);
+
+		// step to next iteration
+		phase++;
+	} // end of while loop
+
+	return;
+}
+
+/*
+ *	compute - performs compute phase of given intensity
+ */
+void compute(int intensity, int sleep_time)
+{
+	switch (intensity) {
+		case NOCOMPUTE:{
+			break;
+		}
+		case ARITHMETIC:{
+			// do simple calculations
+			break;
+		}
+		case INTENSE:{
+			// do intense calculations
+			break;
+		}
+		default:{
+			// == SLEEP
+			sleep(sleep_time);
+			break;
+		}
+	}
+	return;
 }

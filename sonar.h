@@ -21,8 +21,10 @@
 #define INTENSE 3
 
 /* function prototypes */
-void show_usage(char **);
-int benchmark(int*, char*);
+void show_usage(char**);
+void read_dump(int*,char*,int);
+void write_dump(int*,char*,int);
+void compute(int,int);
 
 /* typedefs */
 typedef std::chrono::high_resolution_clock Clock;
