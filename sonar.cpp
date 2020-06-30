@@ -20,7 +20,7 @@ int main(int argc, char** argv)
 	int stride_length     = DEFAULT_STRIDE;            // 10 byte stride
 	int compute_intensity = SLEEP;                     // sleep-simulated
 	int sleep_time        = DEFAULT_SLEEP;             // 10 seconds
-	int io_size           = MIN_IOSIZE;                // 1 MB
+	int io_size           = MIN_IOSIZE * KB;           // 1 KB
 	int num_accesses      = DEFAULT_NUM_ACCESS;        // 1 access per request
 	char *output_file     = (char *)"./sonar-log.csv"; // default output file
 
@@ -71,7 +71,7 @@ int main(int argc, char** argv)
 			}
 			case 's':{
 				int tmps = std::atoi(optarg);
-				io_size = (tmps >= MIN_IOSIZE && tmps <= MAX_IOSIZE) ? tmps : io_size;
+				io_size = (tmps >= MIN_IOSIZE && tmps <= MAX_IOSIZE) ? tmps * KB : io_size;
 				break;
 			}
 			case 't':{
@@ -171,51 +171,89 @@ int dumpRead(int *params, int *mpi, char *output_file, int compute_on)
 	int num_procs = mpi[1];
 
 	// logging
-	int rv, proc, row, col;
-	int num_cols = num_phases << 1;
+	FILE *fp;
+	int rv;
 	int *data, *timings;
+	int num_cols = (num_phases * num_accesses * 2) + num_phases;
 	
+	// allocate space for collected timing data
 	if (rank == 0) {
-		// allocate space for collected timing data
-		timings = (int *) malloc(sizeof(int) * num_procs); // timing per dump
-		data    = (int *) malloc(sizeof(int) * num_procs * num_phases * 2); // stores all
+		timings = (int *) malloc(sizeof(int) * num_procs);
+		data    = (int *) malloc(sizeof(int) * num_procs * num_cols);
 	}
-	
+
+	// open dump file
+	if (!(fp = fopen("write-dump", "w+"))) {
+		std::cerr << "Failed to open dump file\n";
+		return -1;
+	}
+
 	int phase = 0;
 	while (phase < num_phases) {
-		// start timer
-		auto start = Clock::now();
-		
-		// perform read test
-		switch (access_pattern) {
-			case SEQUENTIAL:{
-				break;
-			}
-			case RANDOM:{
-				break;
-			}
-			case STRIDED:{
-				break;
-			}
-		}
 
-		// end timer
-		auto end = Clock::now();
-		int duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
-		
-		// gather timings 
-		MPI_Gather(&duration, 1, MPI_INT, timings, 1, MPI_INT, 0, MPI_COMM_WORLD);
-		
-		// log space/time into dataset
-		if (rank == 0) {
-			for (proc = 0; proc < num_procs; proc++) {
-				// store in dataset array
-				row = num_cols * proc;
-				col = phase << 1;
-				data[row + col] = size_access;
-				data[row + col + 1] = timings[proc];
+		// log current phase
+		data[phase * num_cols] = phase;
+
+		int current_access = 0;
+		while (current_access < num_accesses) {
+			// generate random buffer
+			char *buf = generateRandomBuffer(size_access);
+
+			// seek if necessary
+			switch (access_pattern) {
+				case RANDOM:{
+					// set random offset
+					fseek(fp, 0, SEEK_END);
+					int file_size = ftell(fp);
+					fseek(fp, rand() % file_size, SEEK_SET);
+					break;
+				}
+				case STRIDED:{
+					// set deliberate offset
+					fseek(fp, stride_length, SEEK_CUR);
+					break;
+				}
+				default:{
+					break;
+				}
 			}
-		}
+
+			// write buffer to file and time the operation
+			auto start = Clock::now();
+			//rv = fread(buf, size_access, 1, fp);
+			auto end = Clock::now();
+			int duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
+
+			if (!rv)
+				std::cerr << "Failed to dump to file\n";
+
+			//TODO: DEBUGGING PRINT
+			std::cout	<< "Proc: " << rank << "\n"
+						<< "Dump: " << phase << "\n"
+						<< "Access: " << current_access << "\n"
+						<< "Total Size: " << io_size << "\n bytes"
+						<< "Access Size: " << size_access << " bytes\n"
+						<< "Duration: " << duration << " ns\n";
+
+			// obtain processor timings
+			MPI_Gather(&duration, 1, MPI_INT, timings, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+			// log io access amount and duration
+			if (rank == 0) {
+				for (int proc; proc < num_procs; proc++) {
+					/*
+					 *   (proc * num_cols)               - offset to correct processor (or row) 
+					 *   (phase * num_cols)              - offset to correct dump phase
+					 *   (current_access * num_accesses) - offset to correct IO access
+					 */
+					data[(proc * num_cols) + (phase * num_cols) + (current_access * num_accesses) + 1] = size_access;
+					data[(proc * num_cols) + (phase * num_cols) + (current_access * num_accesses) + 2] = timings[proc];
+				}
+			}
+
+			free(buf);
+			current_access++;
+		} // end while
 
 		if (compute_on)
 			compute(intensity, sleep_time);
@@ -223,10 +261,13 @@ int dumpRead(int *params, int *mpi, char *output_file, int compute_on)
 		phase++;
 	} // end while
 
-	if (rank == 0)
-		rv = logData(data, output_file, num_phases, num_procs, 0);
+	if (rank == 0) {
+		rv = logData(data, params, num_procs, output_file, 0);
+		free(timings);
+		free(data);
+	}
 	
-	return 0;
+	return rv;
 }
 
 
@@ -247,54 +288,98 @@ int dumpWrite(int *params, int *mpi, char *output_file, int compute_on)
 
 	// mpi
 	int rank      = mpi[0];
-	int num_procs = mpi[1];
+	int num_procs = mpi[1]; // == number of rows
 
 	// logging
-	int rv, proc, row, col;
-	int num_cols = num_phases << 1;
+	FILE *fp;
+	char *buf;
 	int *data, *timings;
+	int rv;
+	int cols_per_row   = (num_phases * num_accesses * 2) + num_phases;
+	int cols_per_phase = (num_accesses * 2) + 1;
 	
+	// allocate space for collected timing data
 	if (rank == 0) {
-		// allocate space for collected timing data
-		timings = (int *) malloc(sizeof(int) * num_procs); // timing per dump
-		data = (int *) malloc(sizeof(int) * num_procs * num_phases * 2); // stores all
+		timings = (int *) malloc(sizeof(int) * num_procs);
+		data    = (int *) malloc(sizeof(int) * num_procs * cols_per_row);
 	}
-	
+
+	// open dump file
+	if (!(fp = fopen("write-dump", "w+"))) {
+		std::cerr << "Failed to open dump file\n";
+		return -1;
+	}
+
 	int phase = 0;
 	while (phase < num_phases) {
-		// start timer
-		auto start = Clock::now();
-		
-		// perform write test
-		switch (access_pattern) {
-			case SEQUENTIAL:{
-				break;
-			}
-			case RANDOM:{
-				break;
-			}
-			case STRIDED:{
-				break;
-			}
-		}
 
-		// end timer
-		auto end = Clock::now();
-		int duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
-		
-		// gather timings 
-		MPI_Gather(&duration, 1, MPI_INT, timings, 1, MPI_INT, 0, MPI_COMM_WORLD);
-		
-		// log space/time into dataset
-		if (rank == 0) {
-			for (proc = 0; proc < num_procs; proc++) {
-				// store in dataset array
-				row = num_cols * proc;
-				col = phase << 1;
-				data[row + col] = size_access;
-				data[row + col + 1] = timings[proc];
+		int current_access = 0;
+		while (current_access < num_accesses) {
+			// generate random buffer
+			if (rank == 0)
+				buf = generateRandomBuffer(size_access);
+
+			// seek if necessary
+			switch (access_pattern) {
+				case RANDOM:{
+					// set random offset
+					fseek(fp, 0, SEEK_END);
+					int file_size = ftell(fp);
+					fseek(fp, rand() % file_size, SEEK_SET);
+					break;
+				}
+				case STRIDED:{
+					// set deliberate offset
+					fseek(fp, stride_length, SEEK_CUR);
+					break;
+				}
+				default:{
+					break;
+				}
 			}
-		}
+
+			// write buffer to file and time the operation
+			auto start = Clock::now();
+			rv = fwrite(buf, size_access, 1, fp);
+			auto end = Clock::now();
+			int duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
+
+			if (!rv)
+				std::cerr << "Failed to dump to file\n";
+	/*
+			//TODO: DEBUGGING PRINT
+			std::cout	<< "Proc: " << rank << "\n"
+						<< "Dump: " << phase << "\n"
+						<< "Access: " << current_access << "\n"
+						<< "Total Size: " << io_size << " bytes\n"
+						<< "Access Size: " << size_access << " bytes\n"
+						<< "Duration: " << duration << " ns\n"
+						<< "# Phases: " << num_phases << "\n"
+						<< "# Accesses: " << num_accesses << "\n"
+						<< "# Cols: " << num_cols << "\n"
+						<< "# Rows: " << num_procs << "\n";
+	*/
+			// obtain processor timings
+			MPI_Gather(&duration, 1, MPI_INT, timings, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+			// log io access amount and duration
+			if (rank == 0) {
+				for (int proc = 0; proc < num_procs; proc++) {
+					/*
+					 *   (proc * cols_per_row)           - offset to correct processor (or row) 
+					 *   (phase * cols_per_phase)        - offset to correct dump phase
+					 *   (current_access * num_accesses) - offset to correct IO access
+					 */
+					data[(proc * cols_per_row) + (phase * cols_per_phase)] = phase;
+					data[(proc * cols_per_row) + (phase * cols_per_phase) + (current_access * num_accesses) + 1] = size_access;
+					data[(proc * cols_per_row) + (phase * cols_per_phase) + (current_access * num_accesses) + 2] = timings[proc];
+				}
+			}
+
+			if (rank == 0)
+				free(buf);
+			current_access++;
+		} // end while
 
 		if (compute_on)
 			compute(intensity, sleep_time);
@@ -302,11 +387,15 @@ int dumpWrite(int *params, int *mpi, char *output_file, int compute_on)
 		phase++;
 	} // end while
 
-	if (rank == 0)
-		rv = logData(data, output_file, num_phases, num_procs, 1);
+	if (rank == 0) {
+		rv = logData(data, params, num_procs, output_file, 1);
+		free(timings);
+		free(data);
+	}
 	
-	return 0;
+	return rv;
 }
+
 
 /*
  *	compute - performs compute phase of given intensity
@@ -338,15 +427,16 @@ void compute(int intensity, int sleep_time)
 	return;
 }
 
+
 /*
  *  logData - logs final dataset to .csv file
  */
-int logData(int *data, char *output_file, int num_phases, int num_procs, int io_type)
+int logData(int *data, int *params, int num_procs, char *output_file, int io_type)
 {
 	FILE *log;
-	int rv, proc, row, col;
-	int first_write = 0;
-	int num_cols = num_phases << 1;
+	int num_phases   = params[0];
+	int num_accesses = params[2];
+	int rv, first_write = 0;
 	struct stat buf;
 	std::string line = "";
 
@@ -363,20 +453,22 @@ int logData(int *data, char *output_file, int num_phases, int num_procs, int io_
 	// add headers on first write only
 	if (first_write) {
 		line = "Processor, R/W";
-		for (proc = 0; proc < num_phases; proc++) {
-			line += ", IO Amount (KB), Time elapsed (ns)";
+		for (int i = 0; i < num_phases; i++) {
+			line += ", Phase";
+			for (int j = 0; j < num_accesses; j++) {
+				line += ", IO Amount (KB), Time elapsed (ns)";
+			}
 		}
 		line += "\n";
 	}
 
-	for (proc = 0; proc < num_procs; proc++) {
-		// log data
+	int num_cols = (num_phases * num_accesses * 2) + num_phases;
+	for (int proc = 0; proc < num_procs; proc++) {
+		// log => PROC, R/W
 		line += std::to_string(proc) + ", " + std::to_string(io_type);
-		row = num_cols * proc; 
-		for (col = 0; col < num_cols; col = col + 2) {
-			// iterate through dumps
-			line += ", " + std::to_string(data[row + col]);
-			line += ", " + std::to_string(data[row + col + 1]);
+		
+		for (int i = 0; i < num_cols; i++) {
+			line += ", " + std::to_string(data[i]);
 		}
 		line += "\n";
 	}
@@ -391,6 +483,31 @@ int logData(int *data, char *output_file, int num_phases, int num_procs, int io_
 	
 	return 0;
 }
+
+
+/*
+ *  generateRandomBuffer - for writing to file in I/O write requests
+ */
+char* generateRandomBuffer(int size)
+{
+	char *rbuf;
+
+	// alphanumeric characters
+	char characters[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+	
+	// allocate space for buffer
+	rbuf = (char *) malloc(size);
+
+	int chars = 0;
+	while (chars < size) {
+		// add random alphanumeric character a-zA-Z0-9
+		rbuf[chars] = characters[rand() % sizeof(characters)];
+		chars++;
+	}
+
+	return rbuf;
+}
+
 
 /*
  *	showUsage - display benchmark options

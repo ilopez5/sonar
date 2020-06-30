@@ -7,6 +7,7 @@
 #define MAX_ACCESS 2
 #define MIN_IOSIZE 4    // KB
 #define MAX_IOSIZE 8000 // 8MB
+#define KB 1024
 
 // defines workload types
 #define RONLY 0
@@ -36,9 +37,10 @@
 /* function prototypes */
 void showUsage(char**);
 void compute(int,int);
-int logData(int*,char*,int,int,int);
+int logData(int*,int*,int,char*,int);
 int dumpRead(int*,int*,char*,int);
 int dumpWrite(int*,int*,char*,int);
+char* generateRandomBuffer(int);
 
 /* typedefs */
 typedef std::chrono::high_resolution_clock Clock;
