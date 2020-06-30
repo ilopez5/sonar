@@ -156,7 +156,7 @@ int main(int argc, char** argv)
  */
 int dumpRead(int *params, int *mpi, char *output_file, int compute_on)
 {
-	// parameters
+	// configurable parameters
 	int num_phases     = params[0];
 	int io_size        = params[1];
 	int num_accesses   = params[2];
@@ -174,38 +174,40 @@ int dumpRead(int *params, int *mpi, char *output_file, int compute_on)
 	FILE *fp;
 	int rv;
 	int *data, *timings;
-	int num_cols = (num_phases * num_accesses * 2) + num_phases;
+	int cols_per_row   = (num_phases * num_accesses * 2) + num_phases;
+	int cols_per_phase = (num_accesses * 2) + 1;
+	struct stat fbuf;
 	
 	// allocate space for collected timing data
 	if (rank == 0) {
 		timings = (int *) malloc(sizeof(int) * num_procs);
-		data    = (int *) malloc(sizeof(int) * num_procs * num_cols);
+		data    = (int *) malloc(sizeof(int) * num_procs * cols_per_row);
+		memset(data, 0, sizeof(int) * num_procs * cols_per_row);
 	}
-
+	
 	// open dump file
-	if (!(fp = fopen("write-dump", "w+"))) {
+	if (!(fp = fopen("write-dump", "r"))) {
 		std::cerr << "Failed to open dump file\n";
 		return -1;
 	}
 
+	// read buffer of correct size
+	char *buf = (char *) malloc(size_access);
+
+	int done  = 0;
 	int phase = 0;
 	while (phase < num_phases) {
 
-		// log current phase
-		data[phase * num_cols] = phase;
+		if (done) break;
 
 		int current_access = 0;
 		while (current_access < num_accesses) {
-			// generate random buffer
-			char *buf = generateRandomBuffer(size_access);
-
 			// seek if necessary
 			switch (access_pattern) {
 				case RANDOM:{
-					// set random offset
-					fseek(fp, 0, SEEK_END);
-					int file_size = ftell(fp);
-					fseek(fp, rand() % file_size, SEEK_SET);
+					// get file size then seek to random offset
+					if (stat("write-dump", &fbuf))
+						fseek(fp, rand() % fbuf.st_size, SEEK_SET);
 					break;
 				}
 				case STRIDED:{
@@ -220,38 +222,36 @@ int dumpRead(int *params, int *mpi, char *output_file, int compute_on)
 
 			// write buffer to file and time the operation
 			auto start = Clock::now();
-			//rv = fread(buf, size_access, 1, fp);
+			rv = fread(buf, size_access, 1, fp);
 			auto end = Clock::now();
 			int duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
 
-			if (!rv)
-				std::cerr << "Failed to dump to file\n";
+			std::cout << rv << " " << phase << " " << current_access << "\n";
 
-			//TODO: DEBUGGING PRINT
-			std::cout	<< "Proc: " << rank << "\n"
-						<< "Dump: " << phase << "\n"
-						<< "Access: " << current_access << "\n"
-						<< "Total Size: " << io_size << "\n bytes"
-						<< "Access Size: " << size_access << " bytes\n"
-						<< "Duration: " << duration << " ns\n";
+			// check if reached end of file/no bytes read
+			if (!rv) {
+				done = 1;
+				free(buf);
+				break;
+			}
 
 			// obtain processor timings
 			MPI_Gather(&duration, 1, MPI_INT, timings, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
 			// log io access amount and duration
 			if (rank == 0) {
-				for (int proc; proc < num_procs; proc++) {
+				for (int proc = 0; proc < num_procs; proc++) {
 					/*
-					 *   (proc * num_cols)               - offset to correct processor (or row) 
-					 *   (phase * num_cols)              - offset to correct dump phase
+					 *   (proc * cols_per_row)           - offset to correct processor (or row) 
+					 *   (phase * cols_per_phase)        - offset to correct dump phase
 					 *   (current_access * num_accesses) - offset to correct IO access
 					 */
-					data[(proc * num_cols) + (phase * num_cols) + (current_access * num_accesses) + 1] = size_access;
-					data[(proc * num_cols) + (phase * num_cols) + (current_access * num_accesses) + 2] = timings[proc];
+					data[(proc * cols_per_row) + (phase * cols_per_phase)] = phase;
+					data[(proc * cols_per_row) + (phase * cols_per_phase) + (current_access * num_accesses) + 1] = size_access;
+					data[(proc * cols_per_row) + (phase * cols_per_phase) + (current_access * num_accesses) + 2] = timings[proc];
 				}
 			}
 
-			free(buf);
 			current_access++;
 		} // end while
 
@@ -267,7 +267,7 @@ int dumpRead(int *params, int *mpi, char *output_file, int compute_on)
 		free(data);
 	}
 	
-	return rv;
+	return 0;
 }
 
 
@@ -297,11 +297,13 @@ int dumpWrite(int *params, int *mpi, char *output_file, int compute_on)
 	int rv;
 	int cols_per_row   = (num_phases * num_accesses * 2) + num_phases;
 	int cols_per_phase = (num_accesses * 2) + 1;
+	struct stat fbuf;
 	
 	// allocate space for collected timing data
 	if (rank == 0) {
 		timings = (int *) malloc(sizeof(int) * num_procs);
 		data    = (int *) malloc(sizeof(int) * num_procs * cols_per_row);
+		memset(data, 0, sizeof(int) * num_procs * cols_per_row);
 	}
 
 	// open dump file
@@ -316,16 +318,14 @@ int dumpWrite(int *params, int *mpi, char *output_file, int compute_on)
 		int current_access = 0;
 		while (current_access < num_accesses) {
 			// generate random buffer
-			if (rank == 0)
-				buf = generateRandomBuffer(size_access);
+			buf = generateRandomBuffer(size_access);
 
 			// seek if necessary
 			switch (access_pattern) {
 				case RANDOM:{
-					// set random offset
-					fseek(fp, 0, SEEK_END);
-					int file_size = ftell(fp);
-					fseek(fp, rand() % file_size, SEEK_SET);
+					// get file size then seek to random offset
+					if (stat("write-dump", &fbuf))
+						fseek(fp, rand() % fbuf.st_size, SEEK_SET);
 					break;
 				}
 				case STRIDED:{
@@ -346,19 +346,7 @@ int dumpWrite(int *params, int *mpi, char *output_file, int compute_on)
 
 			if (!rv)
 				std::cerr << "Failed to dump to file\n";
-	/*
-			//TODO: DEBUGGING PRINT
-			std::cout	<< "Proc: " << rank << "\n"
-						<< "Dump: " << phase << "\n"
-						<< "Access: " << current_access << "\n"
-						<< "Total Size: " << io_size << " bytes\n"
-						<< "Access Size: " << size_access << " bytes\n"
-						<< "Duration: " << duration << " ns\n"
-						<< "# Phases: " << num_phases << "\n"
-						<< "# Accesses: " << num_accesses << "\n"
-						<< "# Cols: " << num_cols << "\n"
-						<< "# Rows: " << num_procs << "\n";
-	*/
+			
 			// obtain processor timings
 			MPI_Gather(&duration, 1, MPI_INT, timings, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
@@ -376,8 +364,8 @@ int dumpWrite(int *params, int *mpi, char *output_file, int compute_on)
 				}
 			}
 
-			if (rank == 0)
-				free(buf);
+			free(buf);
+
 			current_access++;
 		} // end while
 
@@ -393,7 +381,7 @@ int dumpWrite(int *params, int *mpi, char *output_file, int compute_on)
 		free(data);
 	}
 	
-	return rv;
+	return 0;
 }
 
 
@@ -501,7 +489,7 @@ char* generateRandomBuffer(int size)
 	int chars = 0;
 	while (chars < size) {
 		// add random alphanumeric character a-zA-Z0-9
-		rbuf[chars] = characters[rand() % sizeof(characters)];
+		rbuf[chars] = characters[rand() % (sizeof(characters) - 1)];
 		chars++;
 	}
 
