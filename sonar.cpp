@@ -194,11 +194,8 @@ int dumpRead(int *params, int *mpi, char *output_file, int compute_on)
 	// read buffer of correct size
 	char *buf = (char *) malloc(size_access);
 
-	int done  = 0;
 	int phase = 0;
 	while (phase < num_phases) {
-
-		if (done) break;
 
 		int current_access = 0;
 		while (current_access < num_accesses) {
@@ -226,15 +223,6 @@ int dumpRead(int *params, int *mpi, char *output_file, int compute_on)
 			auto end = Clock::now();
 			int duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
 
-			std::cout << rv << " " << phase << " " << current_access << "\n";
-
-			// check if reached end of file/no bytes read
-			if (!rv) {
-				done = 1;
-				free(buf);
-				break;
-			}
-
 			// obtain processor timings
 			MPI_Gather(&duration, 1, MPI_INT, timings, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
@@ -247,8 +235,10 @@ int dumpRead(int *params, int *mpi, char *output_file, int compute_on)
 					 *   (current_access * num_accesses) - offset to correct IO access
 					 */
 					data[(proc * cols_per_row) + (phase * cols_per_phase)] = phase;
-					data[(proc * cols_per_row) + (phase * cols_per_phase) + (current_access * num_accesses) + 1] = size_access;
-					data[(proc * cols_per_row) + (phase * cols_per_phase) + (current_access * num_accesses) + 2] = timings[proc];
+					if (rv) {
+						data[(proc * cols_per_row) + (phase * cols_per_phase) + (current_access * num_accesses) + 1] = rv * size_access;
+						data[(proc * cols_per_row) + (phase * cols_per_phase) + (current_access * num_accesses) + 2] = timings[proc];
+					}
 				}
 			}
 
@@ -266,6 +256,8 @@ int dumpRead(int *params, int *mpi, char *output_file, int compute_on)
 		free(timings);
 		free(data);
 	}
+
+	fclose(fp);
 	
 	return 0;
 }
@@ -344,9 +336,6 @@ int dumpWrite(int *params, int *mpi, char *output_file, int compute_on)
 			auto end = Clock::now();
 			int duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
 
-			if (!rv)
-				std::cerr << "Failed to dump to file\n";
-			
 			// obtain processor timings
 			MPI_Gather(&duration, 1, MPI_INT, timings, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
@@ -359,8 +348,10 @@ int dumpWrite(int *params, int *mpi, char *output_file, int compute_on)
 					 *   (current_access * num_accesses) - offset to correct IO access
 					 */
 					data[(proc * cols_per_row) + (phase * cols_per_phase)] = phase;
-					data[(proc * cols_per_row) + (phase * cols_per_phase) + (current_access * num_accesses) + 1] = size_access;
-					data[(proc * cols_per_row) + (phase * cols_per_phase) + (current_access * num_accesses) + 2] = timings[proc];
+					if (rv != 0) {
+						data[(proc * cols_per_row) + (phase * cols_per_phase) + (current_access * num_accesses) + 1] = rv * size_access;
+						data[(proc * cols_per_row) + (phase * cols_per_phase) + (current_access * num_accesses) + 2] = timings[proc];
+					}
 				}
 			}
 
@@ -380,6 +371,8 @@ int dumpWrite(int *params, int *mpi, char *output_file, int compute_on)
 		free(timings);
 		free(data);
 	}
+
+	fclose(fp);
 	
 	return 0;
 }
