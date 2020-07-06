@@ -173,7 +173,7 @@ int dumpRead(int *params, int *mpi, char *output_file, int compute_on)
 
 	// logging
 	FILE *fp;
-	int rv;
+	size_t rv;
 	int *data, *timings;
 	int cols_per_row   = (num_phases * num_accesses * 2) + num_phases;
 	int cols_per_phase = (num_accesses * 2) + 1;
@@ -220,7 +220,7 @@ int dumpRead(int *params, int *mpi, char *output_file, int compute_on)
 
 			// write buffer to file and time the operation
 			auto start = Clock::now();
-			rv = labios::fread(buf, size_access, 1, fp);
+			rv = labios::fread(buf, 1, size_access, fp);
 			auto end = Clock::now();
 			int duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
 
@@ -237,7 +237,7 @@ int dumpRead(int *params, int *mpi, char *output_file, int compute_on)
 					 */
 					data[(proc * cols_per_row) + (phase * cols_per_phase)] = phase;
 					if (rv) {
-						data[(proc * cols_per_row) + (phase * cols_per_phase) + (current_access * num_accesses) + 1] = rv * size_access;
+						data[(proc * cols_per_row) + (phase * cols_per_phase) + (current_access * num_accesses) + 1] = rv;
 						data[(proc * cols_per_row) + (phase * cols_per_phase) + (current_access * num_accesses) + 2] = timings[proc];
 					}
 				}
@@ -286,8 +286,8 @@ int dumpWrite(int *params, int *mpi, char *output_file, int compute_on)
 	// logging
 	FILE *fp;
 	char *buf;
+	size_t rv;
 	int *data, *timings;
-	int rv;
 	int cols_per_row   = (num_phases * num_accesses * 2) + num_phases;
 	int cols_per_phase = (num_accesses * 2) + 1;
 	struct stat fbuf;
@@ -333,7 +333,7 @@ int dumpWrite(int *params, int *mpi, char *output_file, int compute_on)
 
 			// write buffer to file and time the operation
 			auto start = Clock::now();
-			rv = labios::fwrite(buf, size_access, 1, fp);
+			rv = labios::fwrite(buf, 1, size_access, fp);
 			auto end = Clock::now();
 			int duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
 
@@ -350,7 +350,7 @@ int dumpWrite(int *params, int *mpi, char *output_file, int compute_on)
 					 */
 					data[(proc * cols_per_row) + (phase * cols_per_phase)] = phase;
 					if (rv != 0) {
-						data[(proc * cols_per_row) + (phase * cols_per_phase) + (current_access * num_accesses) + 1] = rv * size_access;
+						data[(proc * cols_per_row) + (phase * cols_per_phase) + (current_access * num_accesses) + 1] = rv;
 						data[(proc * cols_per_row) + (phase * cols_per_phase) + (current_access * num_accesses) + 2] = timings[proc];
 					}
 				}
@@ -434,7 +434,8 @@ int logData(int *data, int *params, int num_procs, char *output_file, int io_typ
 	FILE *log;
 	int num_phases   = params[0];
 	int num_accesses = params[2];
-	int rv, first_write = 0;
+	int first_write = 0;
+	size_t rv;
 	struct stat buf;
 	std::string line = "";
 
