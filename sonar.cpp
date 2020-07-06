@@ -174,16 +174,16 @@ int dumpRead(int *params, int *mpi, char *output_file, int compute_on)
 	// logging
 	FILE *fp;
 	size_t rv;
-	int *data, *timings;
+	long *data, *timings;
 	int cols_per_row   = (num_phases * num_accesses * 2) + num_phases;
 	int cols_per_phase = (num_accesses * 2) + 1;
 	struct stat fbuf;
 	
 	// allocate space for collected timing data
 	if (rank == 0) {
-		timings = (int *) malloc(sizeof(int) * num_procs);
-		data    = (int *) malloc(sizeof(int) * num_procs * cols_per_row);
-		memset(data, 0, sizeof(int) * num_procs * cols_per_row);
+		timings = (long *) malloc(sizeof(long) * num_procs);
+		data    = (long *) malloc(sizeof(long) * num_procs * cols_per_row);
+		memset(data, 0, sizeof(long) * num_procs * cols_per_row);
 	}
 	
 	// open dump file
@@ -222,14 +222,16 @@ int dumpRead(int *params, int *mpi, char *output_file, int compute_on)
 			auto start = Clock::now();
 			rv = labios::fread(buf, 1, size_access, fp);
 			auto end = Clock::now();
-			int duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
+			auto duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
 
+			std::cout << "Proc " << rank << ", Phase " << phase << ": " << duration << " ns\n";
+			
 			// obtain processor timings
-			MPI_Gather(&duration, 1, MPI_INT, timings, 1, MPI_INT, 0, MPI_COMM_WORLD);
+			MPI_Gather(&duration, 1, MPI_LONG, timings, 1, MPI_LONG, 0, MPI_COMM_WORLD);
 
 			// log io access amount and duration
 			if (rank == 0) {
-				for (int proc = 0; proc < num_procs; proc++) {
+				for (long proc = 0; proc < num_procs; proc++) {
 					/*
 					 *   (proc * cols_per_row)           - offset to correct processor (or row) 
 					 *   (phase * cols_per_phase)        - offset to correct dump phase
@@ -287,16 +289,16 @@ int dumpWrite(int *params, int *mpi, char *output_file, int compute_on)
 	FILE *fp;
 	char *buf;
 	size_t rv;
-	int *data, *timings;
+	long *data, *timings;
 	int cols_per_row   = (num_phases * num_accesses * 2) + num_phases;
 	int cols_per_phase = (num_accesses * 2) + 1;
 	struct stat fbuf;
 	
 	// allocate space for collected timing data
 	if (rank == 0) {
-		timings = (int *) malloc(sizeof(int) * num_procs);
-		data    = (int *) malloc(sizeof(int) * num_procs * cols_per_row);
-		memset(data, 0, sizeof(int) * num_procs * cols_per_row);
+		timings = (long *) malloc(sizeof(long) * num_procs);
+		data    = (long *) malloc(sizeof(long) * num_procs * cols_per_row);
+		memset(data, 0, sizeof(long) * num_procs * cols_per_row);
 	}
 
 	// open dump file
@@ -335,14 +337,16 @@ int dumpWrite(int *params, int *mpi, char *output_file, int compute_on)
 			auto start = Clock::now();
 			rv = labios::fwrite(buf, 1, size_access, fp);
 			auto end = Clock::now();
-			int duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
+			auto duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
+
+			std::cout << "Proc " << rank << ", Phase " << phase << ": " << duration << " ns\n";
 
 			// obtain processor timings
-			MPI_Gather(&duration, 1, MPI_INT, timings, 1, MPI_INT, 0, MPI_COMM_WORLD);
+			MPI_Gather(&duration, 1, MPI_LONG, timings, 1, MPI_LONG, 0, MPI_COMM_WORLD);
 
 			// log io access amount and duration
 			if (rank == 0) {
-				for (int proc = 0; proc < num_procs; proc++) {
+				for (long proc = 0; proc < num_procs; proc++) {
 					/*
 					 *   (proc * cols_per_row)           - offset to correct processor (or row) 
 					 *   (phase * cols_per_phase)        - offset to correct dump phase
@@ -429,7 +433,7 @@ void compute(int intensity, int sleep_time)
 /*
  *  logData - logs final dataset to .csv file
  */
-int logData(int *data, int *params, int num_procs, char *output_file, int io_type)
+int logData(long *data, int *params, int num_procs, char *output_file, int io_type)
 {
 	FILE *log;
 	int num_phases   = params[0];
@@ -466,7 +470,7 @@ int logData(int *data, int *params, int num_procs, char *output_file, int io_typ
 		// log => PROC, R/W
 		line += std::to_string(proc) + ", " + std::to_string(io_type);
 		
-		for (int i = 0; i < num_cols; i++) {
+		for (long i = 0; i < num_cols; i++) {
 			line += ", " + std::to_string(data[i]);
 		}
 		line += "\n";

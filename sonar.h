@@ -37,7 +37,7 @@
 /* function prototypes */
 void showUsage(char**);
 void compute(int,int);
-int logData(int*,int*,int,char*,int);
+int logData(long*,int*,int,char*,int);
 int dumpRead(int*,int*,char*,int);
 int dumpWrite(int*,int*,char*,int);
 char* generateRandomBuffer(int);
