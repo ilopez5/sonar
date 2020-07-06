@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 #include <chrono>
 #include <mpi.h>
+#include <labios.h>
 #include "sonar.h"
 
 /*
@@ -186,7 +187,7 @@ int dumpRead(int *params, int *mpi, char *output_file, int compute_on)
 	}
 	
 	// open dump file
-	if (!(fp = fopen("write-dump", "r"))) {
+	if (!(fp = labios::fopen("write-dump", "rb"))) {
 		std::cerr << "Failed to open dump file\n";
 		return -1;
 	}
@@ -204,12 +205,12 @@ int dumpRead(int *params, int *mpi, char *output_file, int compute_on)
 				case RANDOM:{
 					// get file size then seek to random offset
 					if (stat("write-dump", &fbuf))
-						fseek(fp, rand() % fbuf.st_size, SEEK_SET);
+						labios::fseek(fp, rand() % fbuf.st_size, SEEK_SET);
 					break;
 				}
 				case STRIDED:{
 					// set deliberate offset
-					fseek(fp, stride_length, SEEK_CUR);
+					labios::fseek(fp, stride_length, SEEK_CUR);
 					break;
 				}
 				default:{
@@ -219,7 +220,7 @@ int dumpRead(int *params, int *mpi, char *output_file, int compute_on)
 
 			// write buffer to file and time the operation
 			auto start = Clock::now();
-			rv = fread(buf, size_access, 1, fp);
+			rv = labios::fread(buf, size_access, 1, fp);
 			auto end = Clock::now();
 			int duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
 
@@ -257,7 +258,7 @@ int dumpRead(int *params, int *mpi, char *output_file, int compute_on)
 		free(data);
 	}
 
-	fclose(fp);
+	labios::fclose(fp);
 	
 	return 0;
 }
@@ -299,7 +300,7 @@ int dumpWrite(int *params, int *mpi, char *output_file, int compute_on)
 	}
 
 	// open dump file
-	if (!(fp = fopen("write-dump", "w+"))) {
+	if (!(fp = labios::fopen("write-dump", "w+"))) {
 		std::cerr << "Failed to open dump file\n";
 		return -1;
 	}
@@ -317,12 +318,12 @@ int dumpWrite(int *params, int *mpi, char *output_file, int compute_on)
 				case RANDOM:{
 					// get file size then seek to random offset
 					if (stat("write-dump", &fbuf))
-						fseek(fp, rand() % fbuf.st_size, SEEK_SET);
+						labios::fseek(fp, rand() % fbuf.st_size, SEEK_SET);
 					break;
 				}
 				case STRIDED:{
 					// set deliberate offset
-					fseek(fp, stride_length, SEEK_CUR);
+					labios::fseek(fp, stride_length, SEEK_CUR);
 					break;
 				}
 				default:{
@@ -332,7 +333,7 @@ int dumpWrite(int *params, int *mpi, char *output_file, int compute_on)
 
 			// write buffer to file and time the operation
 			auto start = Clock::now();
-			rv = fwrite(buf, size_access, 1, fp);
+			rv = labios::fwrite(buf, size_access, 1, fp);
 			auto end = Clock::now();
 			int duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
 
@@ -372,7 +373,7 @@ int dumpWrite(int *params, int *mpi, char *output_file, int compute_on)
 		free(data);
 	}
 
-	fclose(fp);
+	labios::fclose(fp);
 	
 	return 0;
 }
@@ -396,11 +397,27 @@ void compute(int intensity, int sleep_time)
 			break;
 		}
 		case INTENSE:{
-			// do intense calculations
+			int size = 32;
+			int A[size][size], B[size][size], C[size][size];
+			
+			// populate matrices with random integers
+			for (int i = 0; i < size; i++) {
+				for (int j = 0; j < size; j++) {
+					A[i][j] = rand();
+					B[i][j] = rand();
+				}
+			}
+
+			// multiply them and store in third matrix
+			//for (int i = 0; i < sizeof(A); i++) {
+			//	for (int j = 0; j < sizeof(A); j++) {
+			//			
+			//	}
+			//}
 			break;
 		}
 		default:{
-			// == SLEEP
+			// sleep
 			sleep(sleep_time);
 			break;
 		}
@@ -455,7 +472,7 @@ int logData(int *data, int *params, int num_procs, char *output_file, int io_typ
 	}
 
 	// write to log
-	if (!(rv = fwrite(line.c_str(), line.length(), 1, log))) {
+	if (!(rv = fwrite((char *) line.c_str(), line.length(), 1, log))) {
 		std::cerr << "Failed to write to log\n";
 		return -1;
 	}

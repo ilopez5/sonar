@@ -5,9 +5,10 @@
 ## A custom benchmark for I/O systems
 
 The purpose of this benchmark is to simulate different I/O patterns with
-configurable parameters in order to test throughput for I/O systems. Initial
-development of this Sonar is to test the
-[LABIOS](https://dl.acm.org/doi/abs/10.1145/3307681.3325405) I/O system.
+[configurable parameters](#configurable-parameters) in order to test 
+throughput for I/O systems. Initial development of Sonar is intended for
+to testing the [LABIOS](https://dl.acm.org/doi/abs/10.1145/3307681.3325405) 
+I/O system.
 
 ## Configurable parameters:
 - \# of I/O phases
