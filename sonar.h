@@ -1,21 +1,12 @@
 /* macros */
-#define MIN_WORKLOAD 0
-#define MAX_WORKLOAD 5
 #define MIN_INTENSITY 0
-#define MAX_INTENSITY 3
+#define MAX_INTENSITY 2
 #define MIN_ACCESS 0
 #define MAX_ACCESS 2
-#define MIN_IOSIZE 4    // KB
-#define MAX_IOSIZE 8000 // 8MB
+#define MIN_IOSIZE 4     // 4B
+#define MAX_IOSIZE 16384 // 16MB
 #define KB 1024
-
-// defines workload types
-#define RONLY 0
-#define WONLY 1
-#define RCOMPUTE 2
-#define WCOMPUTE 3
-#define WRONLY 4
-#define WRCOMPUTE 5
+#define MB (KB * KB)
 
 // defines access patterns
 #define SEQUENTIAL 0
@@ -24,24 +15,32 @@
 
 // defines compute types
 #define NOCOMPUTE 0
-#define SLEEP 1
-#define ARITHMETIC 2
-#define INTENSE 3
+#define BSLEEP 1
+#define TRADITIONAL 2
 
 // defaults
-#define DEFAULT_PHASES 5      // dumps
+#define DEFAULT_PHASES 5      // # iterations
+#define DEFAULT_REQUESTS 5    // # requests
+#define DEFAULT_ACCESSES 1    // # accesses (per request)
+#define DEFAULT_READS 3       // # reads
+#define DEFAULT_WRITES 1      // # writes
 #define DEFAULT_STRIDE 10     // bytes
-#define DEFAULT_SLEEP 10      // seconds
-#define DEFAULT_NUM_ACCESS 1  // I/O request splits
+#define DEFAULT_SLEEP 5       // seconds
+
+
 
 /* function prototypes */
 void showUsage(char**);
 void compute(int,int);
+int mainIO(int*,int*,long*);
 int logData(long*,int*,int,char*,int);
-int dumpRead(int*,int*,char*,int);
-int dumpWrite(int*,int*,char*,int);
+int random(int,int);
+int parseRequestSize(char*);
 char* generateRandomBuffer(int);
 
 /* typedefs */
 typedef std::chrono::high_resolution_clock Clock;
 typedef std::chrono::nanoseconds Nanoseconds;
+typedef std::chrono::seconds Seconds;
+
+int dumpRead(int*,int*,char*,int);
