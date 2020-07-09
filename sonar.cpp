@@ -19,19 +19,14 @@ int main(int argc, char** argv)
 	int num_accesses      = DEFAULT_ACCESSES;          // 1 access (per request)
 	int num_reads         = DEFAULT_READS;             // 3 reads
 	int num_writes        = DEFAULT_WRITES;            // 1 write
-	int access_pattern    = SEQUENTIAL;                // sequential access
 	int stride_length     = DEFAULT_STRIDE;            // 10 byte stride
-	int intensity         = BSLEEP;                    // busy sleep
 	int sleep_time        = DEFAULT_SLEEP;             // 10 seconds
+	int matrix_size       = DEFAULT_MATRIX;            // 256 x 256
+	int access_pattern    = SEQUENTIAL;                // sequential access
+	int intensity         = BSLEEP;                    // busy sleep
 	int io_min            = MIN_IOSIZE * KB;           // 4 KB
 	int io_max            = MIN_IOSIZE * KB;           // 4 KB
 	char *output_file     = (char *)"./sonar-log.csv"; // default output file
-
-	// check args
-	if (argc == 1) {
-		showUsage(argv);
-		return 0;
-	}
 
 	// initialize MPI
 	int rank, nprocs;
@@ -40,7 +35,7 @@ int main(int argc, char** argv)
 	MPI_Comm_size(MPI_COMM_WORLD, &nprocs); // obtain number of processes
 
 	// parse given options
-	while ((opt = getopt(argc, argv, "h::r:w:a:i:R:n:l:o:s:c:t:")) != EOF) {
+	while ((opt = getopt(argc, argv, "h::r:w:a:i:R:n:l:o:s:c:t:m:")) != EOF) {
 		switch (opt) {
 			case 'h':
 				showUsage(argv);
@@ -65,7 +60,8 @@ int main(int argc, char** argv)
 				num_accesses = std::atoi(optarg);
 				break;
 			case 'l':
-				stride_length = std::atoi(optarg);
+				t = parseRequestSize(optarg);
+				stride_length = (t >= MIN_IOSIZE && t <= MAX_IOSIZE) ? t : stride_length;
 				break;
 			case 'o':
 				output_file = optarg;
@@ -85,6 +81,9 @@ int main(int argc, char** argv)
 			case 't':
 				sleep_time = std::atoi(optarg);
 				break;
+			case 'm':
+				matrix_size = std::atoi(optarg);
+				break;
 			default:
 				showUsage(argv);
 				break;
@@ -94,68 +93,79 @@ int main(int argc, char** argv)
 	// check that min is <= max
 	if (io_max < io_min) {
 		std::cerr << "Invalid I/O range: " << io_min << "B - " << io_max << "B\n";
-		showUsage(argv);
 		return -1;
 	}
 
-	// store parameters
+	// dimensions of dataset
+	int nrows = nprocs * num_iterations * num_requests * (num_reads + num_writes) * num_accesses;
+	int ncols = 9;
+	long *data;
+	if (rank == 0)
+		data = (long *) calloc(nrows * ncols, sizeof(long));
+
+	// store parameters, mpi variables, etc
 	int params[] =
 		{
+			num_iterations,
+			num_requests,
+			num_accesses,
 			num_reads,
 			num_writes,
 			access_pattern,
-			num_accesses,
+			stride_length,
 			io_min,
 			io_max,
-			stride_length
+			rank,
+			nprocs,
+			nrows,
+			ncols
 		};
 
-	// store mpi variables
-	int mpi[] = {rank, nprocs};
-
-	long *data;
-	if (rank == 0) {
-		data = (long *) malloc(sizeof(long) * nprocs);
-		memset(data, 0, sizeof(long) * nprocs);
-	}
-
 	// perform benchmark
-	for (int iter = 0; iter < num_iterations; iter++) {
-		for (int req = 0; req < num_requests; req++) {
-			mainIO(params, mpi, data);
+	for (long i = 0; i < num_iterations; i++) {
+		for (long r = 0; r < num_requests; r++) {
+			if (mainIO(params, data, i, r))
+				return -1;
 
 			if (intensity)
-				compute(intensity, sleep_time);
+				compute(intensity, sleep_time, matrix_size);
 		}
 
 		if (intensity)
-			compute(intensity, sleep_time);
+			compute(intensity, sleep_time, matrix_size);
 	}
 
 	if (rank == 0) {
-		rv = logData(data, params, nprocs, output_file, 1);
+		rv = logData(data, params, output_file);
 		free(data);
 	}
 
 	// clean up MPI
 	MPI_Finalize();
 
-	return rv;
+	return 0;
 }
 
-int mainIO(int *params, int *mpi, long *data)
+/*
+ *  mainIO - performs the I/O requests
+ */
+int mainIO(int *params, long *data, long iteration, long request)
 {
 	FILE *fp;
 	struct stat fbuf;
-	int num_reads      = params[0];
-	int num_writes     = params[1];
-	int access_pattern = params[2];
-	int num_accesses   = params[3];
-	int io_min         = params[4];
-	int io_max         = params[5];
+	int num_iterations = params[0];
+	int num_requests   = params[1];
+	int num_accesses   = params[2];
+	int num_reads      = params[3];
+	int num_writes     = params[4];
+	int access_pattern = params[5];
 	int stride_length  = params[6];
-	int rank           = mpi[0];
-	int nprocs         = mpi[1];
+	int io_min         = params[7];
+	int io_max         = params[8];
+	int rank           = params[9];
+	int nprocs         = params[10];
+	int nrows          = params[11];
+	int ncols          = params[12];
 
 	// read and write buffers
 	char *wbuf;
@@ -163,10 +173,8 @@ int mainIO(int *params, int *mpi, long *data)
 
 	// for storing I/O request times
 	long *timings;
-	if (rank == 0) {
-		timings = (long *) malloc(sizeof(long) * nprocs);
-		memset(timings, 0, sizeof(long) * nprocs);
-	}
+	if (rank == 0)
+		timings = (long *) calloc(nprocs, sizeof(long));
 
 	// open dump file
 	if (!(fp = fopen("sonar-dump", "w+b"))) { // TODO: labios::
@@ -174,44 +182,19 @@ int mainIO(int *params, int *mpi, long *data)
 		return -1;
 	}
 
-	// perform read requests 'num_reads' times
-	for (int read = 0; read < num_reads; read++) {
-		for (int acc = 0; acc < num_accesses; acc++) {
-
-			switch (access_pattern) {
-				case RANDOM:{
-					// get file size then seek to random offset
-					if (stat("sonar-dump", &fbuf))
-						fseek(fp, random(0, fbuf.st_size), SEEK_SET); // TODO: labios::
-					break;
-				}
-				case STRIDED:{
-					// set deliberate offset
-					fseek(fp, stride_length, SEEK_CUR); // TODO: labios::
-					break;
-				}
-			}
-
-			auto start = Clock::now();
-			auto rv = fread(rbuf, 1, random(io_min, io_max), fp); // TODO: labios::
-			auto end = Clock::now();
-			auto duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
-		}
-	}
-
-	fseek(fp, 0, SEEK_SET); // TODO: labios::
+	if (stat("sonar-dump", &fbuf))
+		std::cout << "blah";
 
 	// perform write requests 'num_writes' times
-	for (int read = 0; read < num_writes; read++) {
-		for (int acc = 0; acc < num_accesses; acc++) {
-			auto rsize = random(io_min, io_max);
-			wbuf = generateRandomBuffer(rsize);
+	for (int write = 0; write < num_writes; write++) {
+		for (int access = 0; access < num_accesses; access++) {
+			int random_size = random(io_min, io_max);
+			wbuf = generateRandomBuffer(random_size);
 
 			switch (access_pattern) {
 				case RANDOM:{
-					// get file size then seek to random offset
-					if (stat("sonar-dump", &fbuf))
-						fseek(fp, random(0, fbuf.st_size), SEEK_SET); // TODO: labios::
+					// seek to random offset % file size
+					fseek(fp, random(0, fbuf.st_size), SEEK_SET); // TODO: labios::
 					break;
 				}
 				case STRIDED:{
@@ -222,13 +205,96 @@ int mainIO(int *params, int *mpi, long *data)
 			}
 
 			auto start = Clock::now();
-			auto rv = fwrite(wbuf, 1, rsize, fp); // TODO: labios::
+			size_t rv = fwrite(wbuf, 1, random_size, fp); // TODO: labios::
 			auto end = Clock::now();
 			auto duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
 
 			// TODO: Gather then store
+			MPI_Gather(&duration, 1, MPI_LONG, timings, 1, MPI_LONG, 0, MPI_COMM_WORLD);
 
+			if (rank == 0) {
+				int offset;
+				for (long proc = 0; proc < nprocs; proc++) {
+					// offset to correct row
+					offset  = proc * (num_iterations * num_requests * (num_reads + num_writes) * num_accesses * ncols); // offset to processor block
+					offset += iteration * (num_requests * (num_reads + num_writes) * num_accesses * ncols);             // offset to iteration block
+					offset += request * ((num_reads + num_writes) * num_accesses * ncols);                              // offset to request block
+					offset += num_reads * num_accesses * ncols;												            // offset past the read block
+					offset += write * ncols;                                                                            // offset to write
+					offset += access * ncols;                                                                           // offset to access
+
+					// store data
+					data[offset]     = proc;
+					data[offset + 1] = iteration;
+					data[offset + 2] = request;
+					data[offset + 3] = 1;
+					data[offset + 5] = write;
+					data[offset + 6] = access;
+					data[offset + 7] = rv;
+					data[offset + 8] = timings[proc];
+				}
+			}
 			free(wbuf);
+		}
+	}
+
+	// ensure read test has enough to go on
+	int max_read = io_max * num_iterations * num_requests * num_reads * num_accesses;
+	if (fbuf.st_size < max_read) {
+		int diff = max_read - fbuf.st_size;
+		wbuf = generateRandomBuffer(diff);
+		size_t rv = fwrite(wbuf, 1, diff, fp); // TODO: labios::
+		free(wbuf);
+	}
+
+	// reset offset
+	fseek(fp, 0, SEEK_SET); // TODO: labios::
+
+	// perform read requests 'num_reads' times
+	for (long read = 0; read < num_reads; read++) {
+		for (long access = 0; access < num_accesses; access++) {
+
+			switch (access_pattern) {
+				case RANDOM:{
+					// get file size then seek to random offset
+					if (stat("sonar-dump", &fbuf))
+						fseek(fp, random(0, fbuf.st_size), SEEK_SET); // TODO: labios::
+					break;
+				}
+				case STRIDED:{
+					// set deliberate offset
+					fseek(fp, stride_length, SEEK_CUR); // TODO: labios::
+					break;
+				}
+			}
+
+			auto start = Clock::now();
+			size_t rv = fread(rbuf, 1, random(io_min, io_max), fp); // TODO: labios::
+			auto end = Clock::now();
+			auto duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
+
+			MPI_Gather(&duration, 1, MPI_LONG, timings, 1, MPI_LONG, 0, MPI_COMM_WORLD);
+
+			if (rank == 0) {
+				int offset;
+				for (long proc = 0; proc < nprocs; proc++) {
+					// offset to correct row
+					offset  = proc * (num_iterations * num_requests * (num_reads + num_writes) * num_accesses * ncols); // offset to processor block
+					offset += iteration * (num_requests * (num_reads + num_writes) * num_accesses * ncols);             // offset to iteration block
+					offset += request * ((num_reads + num_writes) * num_accesses * ncols);                              // offset to request block
+					offset += read * ncols;                                                                             // offset to read
+					offset += access * ncols;                                                                           // offset to access
+
+					// store data
+					data[offset]     = proc;
+					data[offset + 1] = iteration;
+					data[offset + 2] = request;
+					data[offset + 4] = read;
+					data[offset + 6] = access;
+					data[offset + 7] = rv;
+					data[offset + 8] = timings[proc];
+				}
+			}
 		}
 	}
 
@@ -241,59 +307,20 @@ int mainIO(int *params, int *mpi, long *data)
 }
 
 /*
- *	dumpRead - ~DEPRECATED~ - perform I/O dump phase for read tests
- */
-int dumpRead(int *params, int *mpi, char *output_file, int compute_on)
-{
-	// int cols_per_row   = (num_phases * num_accesses * 2) + num_phases;
-	// int cols_per_phase = (num_accesses * 2) + 1;
-
-	// // allocate space for collected timing data
-	// if (rank == 0) {
-	// 	timings = (long *) malloc(sizeof(long) * num_procs);
-	// 	data    = (long *) malloc(sizeof(long) * num_procs * cols_per_row);
-	// }
-
-	// std::cout << "Proc " << rank << ", Phase " << phase << ": " << duration << " ns\n";
-
-	// // obtain processor timings
-	// MPI_Gather(&duration, 1, MPI_LONG, timings, 1, MPI_LONG, 0, MPI_COMM_WORLD);
-
-	// // log io access amount and duration
-	// if (rank == 0) {
-	// 	for (long proc = 0; proc < num_procs; proc++) {
-	// 		/*
-	// 			*   (proc * cols_per_row)           - offset to correct processor (or row)
-	// 			*   (phase * cols_per_phase)        - offset to correct dump phase
-	// 			*   (current_access * num_accesses) - offset to correct IO access
-	// 			*/
-	// 		data[(proc * cols_per_row) + (phase * cols_per_phase)] = phase;
-	// 		if (rv) {
-	// 			data[(proc * cols_per_row) + (phase * cols_per_phase) + (current_access * num_accesses) + 1] = rv;
-	// 			data[(proc * cols_per_row) + (phase * cols_per_phase) + (current_access * num_accesses) + 2] = timings[proc];
-	// 		}
-	// 	}
-	// }
-
-	return 0;
-}
-
-/*
  *  logData - logs final dataset to .csv file
  */
-int logData(long *data, int *params, int num_procs, char *output_file, int io_type)
+int logData(long *data, int *params, char *output_file)
 {
 	FILE *log;
-	int num_phases   = params[0];
-	int num_accesses = params[2];
-	int first_write = 0;
+	int nrows   = params[11];
+	int ncols   = params[12];
 	size_t rv;
 	struct stat buf;
 	std::string line = "";
 
-	// check if output file exists
+	// add headers on first write only
 	if (stat(output_file, &buf))
-		first_write = 1;
+		line += "Processor, Iteration, Request, R/W, Read, Write, Access, Amount (B), Duration (ns)\n";
 
 	// open log file (in append mode)
 	if (!(log = fopen(output_file, "a+"))) {
@@ -301,37 +328,25 @@ int logData(long *data, int *params, int num_procs, char *output_file, int io_ty
 		return -1;
 	}
 
-	// add headers on first write only
-	if (first_write) {
-		line = "Processor, R/W";
-		for (int i = 0; i < num_phases; i++) {
-			line += ", Phase";
-			for (int j = 0; j < num_accesses; j++) {
-				line += ", IO Amount (KB), Time elapsed (ns)";
-			}
-		}
-		line += "\n";
+	// add dataset to c++ string
+	for (int i = 0; i < nrows * ncols;) {
+		line += std::to_string(data[i]);
+		i++;
+		if (!(i % ncols))
+			line += "\n";
+		else
+			line += ", ";
 	}
-
-	int num_cols = (num_phases * num_accesses * 2) + num_phases;
-	for (int proc = 0; proc < num_procs; proc++) {
-		// log => PROC, R/W
-		line += std::to_string(proc) + ", " + std::to_string(io_type);
-
-		for (long i = 0; i < num_cols; i++) {
-			line += ", " + std::to_string(data[i]);
-		}
-		line += "\n";
-	}
+	line += "\n";
 
 	// write to log
 	if (!(rv = fwrite((char *) line.c_str(), line.length(), 1, log))) {
 		std::cerr << "Failed to write to log\n";
+		fclose(log);
 		return -1;
 	}
 
 	fclose(log);
-
 	return 0;
 }
 
@@ -341,25 +356,35 @@ int logData(long *data, int *params, int num_procs, char *output_file, int io_ty
  *		1 - busy sleep [default]
  *		2 - traditional arithmetic
  */
-void compute(int intensity, int sleep_time)
+void compute(int intensity, int sleep_time, int matrix_size)
 {
 	switch (intensity) {
 		case NOCOMPUTE:
 			break;
 		case TRADITIONAL:{
-			int size = 32;
-			int A[size][size], B[size][size], C[size][size];
+			int sum;
+			int A[matrix_size][matrix_size];
+			int B[matrix_size][matrix_size];
+			int C[matrix_size][matrix_size];
 
 			// populate matrices with random integers
-			for (int i = 0; i < size; i++) {
-				for (int j = 0; j < size; j++) {
-					A[i][j] = rand();
-					B[i][j] = rand();
+			for (int i = 0; i < matrix_size; i++) {
+				for (int j = 0; j < matrix_size; j++) {
+					A[i][j] = random(0, 1000);
+					B[i][j] = random(0, 1000);
 				}
 			}
 
-			// TODO: multiply them and store in third matrix
-
+			// multiply A*B and store in third matrix
+			for (int i = 0; i < matrix_size; i++) {
+				for (int j = 0; j < matrix_size; j++) {
+					sum = 0;
+					for (int k = 0; k < matrix_size; k++) {
+						sum += A[i][k] * B[k][j];
+					}
+					C[i][j] = sum;
+				}
+			}
 			break;
 		}
 		default:{
@@ -436,23 +461,24 @@ void showUsage(char** argv)
 	std::cerr	<< "Usage: " << argv[0] << " [OPTIONS]\n"
 				<< "Options:\n"
 				<< "\t-h,\t\tPrint this help message\n"
-				<< "\t-r,\t\tNumber of reads [3]\n"
-				<< "\t-w,\t\tNumber of writes [1]\n"
-				<< "\t-a,\t\tI/O Access pattern\n"
+				<< "\t-r,\t\tNumber of reads [" << DEFAULT_READS << "]\n"
+				<< "\t-w,\t\tNumber of writes [" << DEFAULT_WRITES << "]\n"
+				<< "\t-a,\t\tAccess pattern\n"
 				<< "\t\t\t\t0 - [Sequential]\n"
 				<< "\t\t\t\t1 - Random\n"
 				<< "\t\t\t\t2 - Strided\n"
 				<< "\t-i,\t\tNumber of I/O iterations [" << DEFAULT_PHASES << "]\n"
 				<< "\t-R,\t\tNumber of I/O requests [" << DEFAULT_REQUESTS << "]\n"
-				<< "\t-n,\t\tNumber of I/O accesses [" << DEFAULT_ACCESSES << "]\n"
-				<< "\t-s,\t\tLower bound of I/O request (e.g., 4, 8K, or 16M) [" << MIN_IOSIZE << "K]\n"
-				<< "\t-S,\t\tUpper bound of I/O request (e.g., 4, 8K, or 16M) [" << MIN_IOSIZE << "K]\n"
-				<< "\t-l,\t\tStride length (in bytes) (access pattern=2) [" << DEFAULT_STRIDE << "B]\n"
+				<< "\t-n,\t\tNumber of I/O accesses (per request) [" << DEFAULT_ACCESSES << "]\n"
+				<< "\t-s,\t\tLower bound of I/O request size (e.g., 4, 8K, or 16M) [" << MIN_IOSIZE << "K]\n"
+				<< "\t-S,\t\tUpper bound of I/O request size (e.g., 4, 8K, or 16M) [" << MIN_IOSIZE << "K]\n"
+				<< "\t-l,\t\tStride length (access pattern=2) [" << DEFAULT_STRIDE << "B]\n"
 				<< "\t-c,\t\tCompute intensity\n"
 				<< "\t\t\t\t0 - None\n"
 				<< "\t\t\t\t1 - [Busy Sleep]\n"
 				<< "\t\t\t\t2 - Traditional\n"
-				<< "\t-t,\t\tSleep time (compute intensity=1) [" << DEFAULT_SLEEP << "s]\n"
+				<< "\t-t,\t\tSleep time (intensity=1) [" << DEFAULT_SLEEP << "s]\n"
+				<< "\t-m,\t\tSize of square matrix (intensity=2) [" << DEFAULT_MATRIX << "]\n"
 				<< "\t-o,\t\tOutput file logs to [sonar-log.txt]\n";
 }
 

@@ -26,16 +26,17 @@
 #define DEFAULT_WRITES 1      // # writes
 #define DEFAULT_STRIDE 10     // bytes
 #define DEFAULT_SLEEP 5       // seconds
+#define DEFAULT_MATRIX 256
 
 
 
 /* function prototypes */
-void showUsage(char**);
-void compute(int,int);
-int mainIO(int*,int*,long*);
-int logData(long*,int*,int,char*,int);
+int mainIO(int*,long*,long,long);
+int logData(long*,int*,char*);
 int random(int,int);
 int parseRequestSize(char*);
+void showUsage(char**);
+void compute(int,int,int);
 char* generateRandomBuffer(int);
 
 /* typedefs */
