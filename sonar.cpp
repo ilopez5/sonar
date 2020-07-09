@@ -256,8 +256,7 @@ int mainIO(int *params, long *data, long iteration, long request)
 			switch (access_pattern) {
 				case RANDOM:{
 					// get file size then seek to random offset
-					if (stat("sonar-dump", &fbuf))
-						labios::fseek(fp, random(0, fbuf.st_size), SEEK_SET);
+					labios::fseek(fp, random(0, fbuf.st_size), SEEK_SET);
 					break;
 				}
 				case STRIDED:{
