@@ -3,7 +3,7 @@
 #include <chrono>
 #include <mpi.h>
 #include <random>
-// #include <labios.h>
+#include <labios.h>
 #include "sonar.h"
 
 
@@ -177,7 +177,7 @@ int mainIO(int *params, long *data, long iteration, long request)
 		timings = (long *) calloc(nprocs, sizeof(long));
 
 	// open dump file
-	if (!(fp = fopen("sonar-dump", "w+b"))) { // TODO: labios::
+	if (!(fp = labios::fopen("sonar-dump", "w+b"))) {
 		std::cerr << "Failed to open/create dump file\n";
 		return -1;
 	}
@@ -193,18 +193,18 @@ int mainIO(int *params, long *data, long iteration, long request)
 			switch (access_pattern) {
 				case RANDOM:{
 					// seek to random offset % file size
-					fseek(fp, random(0, fbuf.st_size), SEEK_SET); // TODO: labios::
+					labios::fseek(fp, random(0, fbuf.st_size), SEEK_SET);
 					break;
 				}
 				case STRIDED:{
 					// set deliberate offset
-					fseek(fp, stride_length, SEEK_CUR); // TODO: labios::
+					labios::fseek(fp, stride_length, SEEK_CUR);
 					break;
 				}
 			}
 
 			auto start = Clock::now();
-			size_t rv = fwrite(wbuf, 1, random_size, fp); // TODO: labios::
+			size_t rv = labios::fwrite(wbuf, 1, random_size, fp);
 			auto end = Clock::now();
 			auto duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
 
@@ -242,12 +242,12 @@ int mainIO(int *params, long *data, long iteration, long request)
 	if (fbuf.st_size < max_read) {
 		int diff = max_read - fbuf.st_size;
 		wbuf = generateRandomBuffer(diff);
-		size_t rv = fwrite(wbuf, 1, diff, fp); // TODO: labios::
+		size_t rv = labios::fwrite(wbuf, 1, diff, fp);
 		free(wbuf);
 	}
 
 	// reset offset
-	fseek(fp, 0, SEEK_SET); // TODO: labios::
+	labios::fseek(fp, 0, SEEK_SET);
 
 	// perform read requests 'num_reads' times
 	for (long read = 0; read < num_reads; read++) {
@@ -257,18 +257,18 @@ int mainIO(int *params, long *data, long iteration, long request)
 				case RANDOM:{
 					// get file size then seek to random offset
 					if (stat("sonar-dump", &fbuf))
-						fseek(fp, random(0, fbuf.st_size), SEEK_SET); // TODO: labios::
+						labios::fseek(fp, random(0, fbuf.st_size), SEEK_SET);
 					break;
 				}
 				case STRIDED:{
 					// set deliberate offset
-					fseek(fp, stride_length, SEEK_CUR); // TODO: labios::
+					labios::fseek(fp, stride_length, SEEK_CUR);
 					break;
 				}
 			}
 
 			auto start = Clock::now();
-			size_t rv = fread(rbuf, 1, random(io_min, io_max), fp); // TODO: labios::
+			size_t rv = labios::fread(rbuf, 1, random(io_min, io_max), fp);
 			auto end = Clock::now();
 			auto duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
 
@@ -297,7 +297,7 @@ int mainIO(int *params, long *data, long iteration, long request)
 		}
 	}
 
-	fclose(fp); // TODO: labios::
+	labios::fclose(fp); // TODO: labios::
 	free(rbuf);
 	if (rank == 0)
 		free(timings);
