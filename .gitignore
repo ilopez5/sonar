@@ -1,3 +1,5 @@
 sonar
 test.sh
 other/
+sonar-log.csv
+sonar-dump

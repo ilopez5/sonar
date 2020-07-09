@@ -35,7 +35,7 @@ int main(int argc, char** argv)
 	MPI_Comm_size(MPI_COMM_WORLD, &nprocs); // obtain number of processes
 
 	// parse given options
-	while ((opt = getopt(argc, argv, "h::r:w:a:i:R:n:l:o:s:c:t:m:")) != EOF) {
+	while ((opt = getopt(argc, argv, "h::r:w:a:i:R:n:l:o:s:S:c:t:m:")) != EOF) {
 		switch (opt) {
 			case 'h':
 				showUsage(argv);
@@ -182,8 +182,7 @@ int mainIO(int *params, long *data, long iteration, long request)
 		return -1;
 	}
 
-	if (stat("sonar-dump", &fbuf))
-		std::cout << "blah";
+	stat("sonar-dump", &fbuf);
 
 	// perform write requests 'num_writes' times
 	for (int write = 0; write < num_writes; write++) {
@@ -442,14 +441,13 @@ int parseRequestSize(char *request)
 	std::string io(request);
 	char *type = (char *) io.substr(io.length() - 1).c_str();
 
-	if (type == (char *)'K') {
-		num = std::atoi(io.substr(0, io.length() - 1).c_str()) * KB;
-	} else if (type == (char *)'M') {
+	if (type[0] == 'K') {
+		num = (std::atoi(io.substr(0, io.length() - 1).c_str())) * KB;
+	} else if (type[0] == 'M') {
 		num = std::atoi(io.substr(0, io.length() - 1).c_str()) * MB;
 	} else {
 		num = std::atoi(io.c_str());
 	}
-
 	return num;
 }
 
