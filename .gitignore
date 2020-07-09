@@ -1,5 +1,5 @@
-sonar
-test.sh
 other/
+.vscode/
+sonar
 sonar-log.csv
 sonar-dump
