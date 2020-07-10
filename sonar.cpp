@@ -124,7 +124,7 @@ int main(int argc, char** argv)
 	// perform benchmark
 	for (long i = 0; i < num_iterations; i++) {
 		for (long r = 0; r < num_requests; r++) {
-			if (mainIO(params, data, i, r))
+			if (mainIO(params, data, i, r) < 0)
 				return -1;
 
 			if (intensity)
@@ -208,7 +208,7 @@ int mainIO(int *params, long *data, long iteration, long request)
 			auto end = Clock::now();
 			auto duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
 
-			// TODO: Gather then store
+			// gather then store timings
 			MPI_Gather(&duration, 1, MPI_LONG, timings, 1, MPI_LONG, 0, MPI_COMM_WORLD);
 
 			if (rank == 0) {
@@ -296,7 +296,7 @@ int mainIO(int *params, long *data, long iteration, long request)
 		}
 	}
 
-	labios::fclose(fp); // TODO: labios::
+	labios::fclose(fp);
 	free(rbuf);
 	if (rank == 0)
 		free(timings);
