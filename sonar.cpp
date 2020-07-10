@@ -124,7 +124,7 @@ int main(int argc, char** argv)
 	// perform benchmark
 	for (long i = 0; i < num_iterations; i++) {
 		for (long r = 0; r < num_requests; r++) {
-			if (mainIO(params, data, i, r))
+			if (mainIO(params, data, i, r) < 0)
 				return -1;
 
 			if (intensity)
