@@ -329,11 +329,7 @@ int logData(long *data, int *params, char *output_file)
 	// add dataset to c++ string
 	for (int i = 0; i < nrows * ncols;) {
 		line += std::to_string(data[i]);
-		i++;
-		if (!(i % ncols))
-			line += "\n";
-		else
-			line += ", ";
+		line += (!(++i % ncols)) ? "\n" : ", ";
 	}
 	line += "\n";
 
