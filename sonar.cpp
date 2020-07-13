@@ -3,6 +3,7 @@
 #include <chrono>
 #include <mpi.h>
 #include <random>
+#include <iostream>
 #include <labios.h>
 #include "sonar.h"
 
@@ -166,6 +167,7 @@ int mainIO(int *params, long *data, long iteration, long request)
 	int nprocs         = params[10];
 	int nrows          = params[11];
 	int ncols          = params[12];
+	int io_size;
 
 	// read and write buffers
 	char *wbuf;
@@ -182,14 +184,16 @@ int mainIO(int *params, long *data, long iteration, long request)
 		return -1;
 	}
 
+	// to track dump file size
 	stat("sonar-dump", &fbuf);
 
 	// perform write requests 'num_writes' times
 	for (int write = 0; write < num_writes; write++) {
-		for (int access = 0; access < num_accesses; access++) {
-			int random_size = random(io_min, io_max);
-			wbuf = generateRandomBuffer(random_size);
 
+		io_size = random(io_min, io_max);		
+		for (int access = 0; access < num_accesses; access++) {
+			
+			wbuf = generateRandomBuffer(io_size);
 			switch (access_pattern) {
 				case RANDOM:{
 					// seek to random offset % file size
@@ -204,7 +208,7 @@ int mainIO(int *params, long *data, long iteration, long request)
 			}
 
 			auto start = Clock::now();
-			size_t rv = labios::fwrite(wbuf, 1, random_size, fp);
+			size_t rv = labios::fwrite(wbuf, 1, io_size, fp);
 			auto end = Clock::now();
 			auto duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
 
@@ -219,14 +223,13 @@ int mainIO(int *params, long *data, long iteration, long request)
 					offset += iteration * (num_requests * (num_reads + num_writes) * num_accesses * ncols);             // offset to iteration block
 					offset += request * ((num_reads + num_writes) * num_accesses * ncols);                              // offset to request block
 					offset += num_reads * num_accesses * ncols;												            // offset past the read block
-					offset += write * ncols;                                                                            // offset to write
+					offset += write * num_accesses * ncols;                                                             // offset to write
 					offset += access * ncols;                                                                           // offset to access
 
 					// store data
 					data[offset]     = proc;
 					data[offset + 1] = iteration;
 					data[offset + 2] = request;
-					data[offset + 3] = 1;
 					data[offset + 5] = write;
 					data[offset + 6] = access;
 					data[offset + 7] = rv;
@@ -251,6 +254,8 @@ int mainIO(int *params, long *data, long iteration, long request)
 
 	// perform read requests 'num_reads' times
 	for (long read = 0; read < num_reads; read++) {
+		
+		io_size = random(io_min, io_max);
 		for (long access = 0; access < num_accesses; access++) {
 
 			switch (access_pattern) {
@@ -271,6 +276,7 @@ int mainIO(int *params, long *data, long iteration, long request)
 			auto end = Clock::now();
 			auto duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
 
+			// gather then store timings
 			MPI_Gather(&duration, 1, MPI_LONG, timings, 1, MPI_LONG, 0, MPI_COMM_WORLD);
 
 			if (rank == 0) {
@@ -280,13 +286,14 @@ int mainIO(int *params, long *data, long iteration, long request)
 					offset  = proc * (num_iterations * num_requests * (num_reads + num_writes) * num_accesses * ncols); // offset to processor block
 					offset += iteration * (num_requests * (num_reads + num_writes) * num_accesses * ncols);             // offset to iteration block
 					offset += request * ((num_reads + num_writes) * num_accesses * ncols);                              // offset to request block
-					offset += read * ncols;                                                                             // offset to read
+					offset += read * num_accesses * ncols;                                                              // offset to read
 					offset += access * ncols;                                                                           // offset to access
 
 					// store data
 					data[offset]     = proc;
 					data[offset + 1] = iteration;
 					data[offset + 2] = request;
+					data[offset + 3] = 1;
 					data[offset + 4] = read;
 					data[offset + 6] = access;
 					data[offset + 7] = rv;
