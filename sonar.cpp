@@ -222,7 +222,7 @@ int mainIO(int *params, long *data, long iteration, long request)
 					offset  = proc * (num_iterations * num_requests * (num_reads + num_writes) * num_accesses * ncols); // offset to processor block
 					offset += iteration * (num_requests * (num_reads + num_writes) * num_accesses * ncols);             // offset to iteration block
 					offset += request * ((num_reads + num_writes) * num_accesses * ncols);                              // offset to request block
-					offset += num_reads * num_accesses * ncols;												            // offset past the read block
+					offset += num_reads * num_accesses * ncols;                                                         // offset past the read block
 					offset += write * num_accesses * ncols;                                                             // offset to write
 					offset += access * ncols;                                                                           // offset to access
 
@@ -272,7 +272,7 @@ int mainIO(int *params, long *data, long iteration, long request)
 			}
 
 			auto start = Clock::now();
-			size_t rv = labios::fread(rbuf, 1, random(io_min, io_max), fp);
+			size_t rv = labios::fread(rbuf, 1, io_size, fp);
 			auto end = Clock::now();
 			auto duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
 
