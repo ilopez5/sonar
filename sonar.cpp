@@ -189,11 +189,11 @@ int mainIO(int *params, long *data, long iteration, long request)
 
 	// perform write requests 'num_writes' times
 	for (int write = 0; write < num_writes; write++) {
-
 		io_size = random(io_min, io_max) / num_accesses;
-		for (int access = 0; access < num_accesses; access++) {
 
+		for (int access = 0; access < num_accesses; access++) {
 			wbuf = generateRandomBuffer(io_size);
+
 			switch (access_pattern) {
 				case RANDOM:{
 					// seek to random offset % file size
@@ -254,8 +254,8 @@ int mainIO(int *params, long *data, long iteration, long request)
 
 	// perform read requests 'num_reads' times
 	for (long read = 0; read < num_reads; read++) {
-
 		io_size = random(io_min, io_max) / num_accesses;
+
 		for (long access = 0; access < num_accesses; access++) {
 
 			switch (access_pattern) {
