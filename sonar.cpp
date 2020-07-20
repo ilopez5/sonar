@@ -4,7 +4,7 @@
 #include <mpi.h>
 #include <random>
 #include <iostream>
-// #include <labios.h>
+#include <labios.h>
 #include "sonar.h"
 
 
@@ -179,7 +179,7 @@ int mainIO(int *params, long *data, long iteration, long request)
 		timings = (long *) calloc(nprocs, sizeof(long));
 
 	// open dump file
-	if (!(fp = fopen("sonar-dump", "w+b"))) {
+	if (!(fp = labios::fopen("sonar-dump", "w+b"))) {
 		std::cerr << "Failed to open/create dump file\n";
 		return -1;
 	}
@@ -189,26 +189,26 @@ int mainIO(int *params, long *data, long iteration, long request)
 
 	// perform write requests 'num_writes' times
 	for (int write = 0; write < num_writes; write++) {
-		io_size = random(io_min, io_max) / num_accesses;
-
+		io_size = random(io_min, io_max);		
+		
 		for (int access = 0; access < num_accesses; access++) {
 			wbuf = generateRandomBuffer(io_size);
-
+		
 			switch (access_pattern) {
 				case RANDOM:{
 					// seek to random offset % file size
-					fseek(fp, random(0, fbuf.st_size), SEEK_SET);
+					labios::fseek(fp, random(0, fbuf.st_size), SEEK_SET);
 					break;
 				}
 				case STRIDED:{
 					// set deliberate offset
-					fseek(fp, stride_length, SEEK_CUR);
+					labios::fseek(fp, stride_length, SEEK_CUR);
 					break;
 				}
 			}
 
 			auto start = Clock::now();
-			auto rv = fwrite(wbuf, 1, io_size, fp);
+			size_t rv = labios::fwrite(wbuf, 1, io_size, fp);
 			auto end = Clock::now();
 			auto duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
 
@@ -245,37 +245,37 @@ int mainIO(int *params, long *data, long iteration, long request)
 	if (fbuf.st_size < max_read) {
 		int diff = max_read - fbuf.st_size;
 		wbuf = generateRandomBuffer(diff);
-		size_t rv = fwrite(wbuf, 1, diff, fp);
+		size_t rv = labios::fwrite(wbuf, 1, diff, fp);
 		free(wbuf);
 	}
 
 	// reset offset
-	fseek(fp, 0, SEEK_SET);
+	labios::fseek(fp, 0, SEEK_SET);
 
 	// perform read requests 'num_reads' times
-	for (long read = 0; read < num_reads; read++) {
-		io_size = random(io_min, io_max) / num_accesses;
+	for (long read = 0; read < num_reads; read++) {	
+		io_size = random(io_min, io_max);
 
 		for (long access = 0; access < num_accesses; access++) {
-
 			switch (access_pattern) {
 				case RANDOM:{
 					// get file size then seek to random offset
-					fseek(fp, random(0, fbuf.st_size), SEEK_SET);
+					labios::fseek(fp, random(0, fbuf.st_size), SEEK_SET);
 					break;
 				}
 				case STRIDED:{
 					// set deliberate offset
-					fseek(fp, stride_length, SEEK_CUR);
+					labios::fseek(fp, stride_length, SEEK_CUR);
 					break;
 				}
 			}
 
 			auto start = Clock::now();
-			auto rv = fread(rbuf, 1, io_size, fp);
+			size_t rv = labios::fread(rbuf, 1, io_size, fp);
 			auto end = Clock::now();
 			auto duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
 
+			// gather then store timings
 			MPI_Gather(&duration, 1, MPI_LONG, timings, 1, MPI_LONG, 0, MPI_COMM_WORLD);
 
 			if (rank == 0) {
@@ -302,7 +302,7 @@ int mainIO(int *params, long *data, long iteration, long request)
 		}
 	}
 
-	fclose(fp);
+	labios::fclose(fp);
 	free(rbuf);
 	if (rank == 0)
 		free(timings);
