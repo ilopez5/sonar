@@ -7,7 +7,6 @@
 #include <labios.h>
 #include "sonar.h"
 
-
 /*
  *	main - driver for Sonar benchmark
  */
@@ -27,16 +26,10 @@ int main(int argc, char** argv)
 	int intensity         = BSLEEP;                    // busy sleep
 	int io_min            = MIN_IOSIZE * KB;           // 4 KB
 	int io_max            = MIN_IOSIZE * KB;           // 4 KB
-	char *output_file     = (char *)"./sonar-log.csv"; // default output file
-
-	// initialize MPI
-	int rank, nprocs;
-	MPI_Init(&argc, &argv);
-	MPI_Comm_rank(MPI_COMM_WORLD, &rank);   // obtain rank
-	MPI_Comm_size(MPI_COMM_WORLD, &nprocs); // obtain number of processes
+	char *output_file     = (char *)"/home/ish/documents/research/install/src/sonar/sonar-log.csv"; // default output file
 
 	// parse given options
-	while ((opt = getopt(argc, argv, "h::r:w:a:i:R:n:l:o:s:S:c:t:m:")) != EOF) {
+	while ((opt = getopt(argc, argv, "h::r:w:x:i:R:n:l:o:s:S:e:t:m:")) != EOF) {
 		switch (opt) {
 			case 'h':
 				showUsage(argv);
@@ -47,7 +40,7 @@ int main(int argc, char** argv)
 			case 'w':
 				num_writes = std::atoi(optarg);
 				break;
-			case 'a':
+			case 'x':
 				t = std::atoi(optarg);
 				access_pattern = (t >= MIN_ACCESS && t <= MAX_ACCESS) ? t : access_pattern;
 				break;
@@ -75,7 +68,7 @@ int main(int argc, char** argv)
 				t = parseRequestSize(optarg);
 				io_max = (t >= MIN_IOSIZE && t <= MAX_IOSIZE) ? t : io_max;
 				break;
-			case 'c':
+			case 'e':
 				t = std::atoi(optarg);
 				intensity = (t <= MAX_INTENSITY && t >= MIN_INTENSITY) ? t : intensity;
 				break;
@@ -97,29 +90,36 @@ int main(int argc, char** argv)
 		return -1;
 	}
 
+    // initialize MPI
+    int my_rank, nprocs;
+
+    labios::MPI_Init(&argc,&argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);   // obtain my_rank
+    MPI_Comm_size(MPI_COMM_WORLD, &nprocs); // obtain number of processes
+
 	// dimensions of dataset
 	int nrows = nprocs * num_iterations * num_requests * (num_reads + num_writes) * num_accesses;
 	int ncols = 9;
 	long *data;
-	if (rank == 0)
+	if (my_rank == 0)
 		data = (long *) calloc(nrows * ncols, sizeof(long));
 
 	// store parameters, mpi variables, etc
 	int params[] =
 		{
-			num_iterations,
-			num_requests,
-			num_accesses,
-			num_reads,
-			num_writes,
-			access_pattern,
-			stride_length,
-			io_min,
-			io_max,
-			rank,
-			nprocs,
-			nrows,
-			ncols
+                num_iterations,
+                num_requests,
+                num_accesses,
+                num_reads,
+                num_writes,
+                access_pattern,
+                stride_length,
+                io_min,
+                io_max,
+                my_rank,
+                nprocs,
+                nrows,
+                ncols
 		};
 
 	// perform benchmark
@@ -136,13 +136,13 @@ int main(int argc, char** argv)
 			compute(intensity, sleep_time, matrix_size);
 	}
 
-	if (rank == 0) {
+	if (my_rank == 0) {
 		rv = logData(data, params, output_file);
 		free(data);
 	}
 
 	// clean up MPI
-	MPI_Finalize();
+    labios::MPI_Finalize();
 
 	return 0;
 }
@@ -327,7 +327,7 @@ int logData(long *data, int *params, char *output_file)
 		line += "Processor, Iteration, Request, R/W, Read, Write, Access, Amount (B), Duration (ns)\n";
 
 	// open log file (in append mode)
-	if (!(log = fopen(output_file, "a+"))) {
+	if (!(log = std::fopen(output_file, "a+"))) {
 		std::cerr << "Failed to open/create log file: " << output_file << "\n";
 		return -1;
 	}
@@ -340,14 +340,11 @@ int logData(long *data, int *params, char *output_file)
 	line += "\n";
 
 	// write to log
-	if (!(rv = fwrite((char *) line.c_str(), line.length(), 1, log))) {
+	if (!(rv = std::fwrite((char *) line.c_str(), line.length(), 1, log)))
 		std::cerr << "Failed to write to log\n";
-		fclose(log);
-		return -1;
-	}
 
-	fclose(log);
-	return 0;
+    std::fclose(log);
+	return (int) (rv) - 1;
 }
 
 /*
@@ -468,11 +465,11 @@ void showUsage(char** argv)
 				<< "\t\t\t\t2 - Strided\n"
 				<< "\t-i,\t\tNumber of I/O iterations [" << DEFAULT_PHASES << "]\n"
 				<< "\t-R,\t\tNumber of I/O requests [" << DEFAULT_REQUESTS << "]\n"
-				<< "\t-n,\t\tNumber of I/O accesses (per request) [" << DEFAULT_ACCESSES << "]\n"
+				<< "\t-x,\t\tNumber of I/O accesses (per request) [" << DEFAULT_ACCESSES << "]\n"
 				<< "\t-s,\t\tLower bound of I/O request size (e.g., 4, 8K, or 16M) [" << MIN_IOSIZE << "K]\n"
 				<< "\t-S,\t\tUpper bound of I/O request size (e.g., 4, 8K, or 16M) [" << MIN_IOSIZE << "K]\n"
 				<< "\t-l,\t\tStride length (access pattern=2) [" << DEFAULT_STRIDE << "B]\n"
-				<< "\t-c,\t\tCompute intensity\n"
+				<< "\t-e,\t\tCompute intensity\n"
 				<< "\t\t\t\t0 - None\n"
 				<< "\t\t\t\t1 - [Busy Sleep]\n"
 				<< "\t\t\t\t2 - Traditional\n"

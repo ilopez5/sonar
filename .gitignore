@@ -3,3 +3,5 @@ other/
 sonar
 sonar-log.csv
 sonar-dump
+/cmake-build-debug/
+.idea/
