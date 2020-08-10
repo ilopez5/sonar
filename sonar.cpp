@@ -14,7 +14,7 @@
 int main(int argc, char** argv)
 {
 	// benchmark parameters (w/ defaults)
-	int rv, opt, t;
+	int opt, t;
 	int num_iterations    = DEFAULT_PHASES;            // 5 iterations
 	int num_requests      = DEFAULT_REQUESTS;          // 5 dumps
 	int num_accesses      = DEFAULT_ACCESSES;          // 1 access (per request)
@@ -29,14 +29,8 @@ int main(int argc, char** argv)
 	int io_max            = MIN_IOSIZE * KB;           // 4 KB
 	char *output_file     = (char *)"./sonar-log.csv"; // default output file
 
-	// initialize MPI
-	int rank, nprocs;
-	MPI_Init(&argc, &argv);
-	MPI_Comm_rank(MPI_COMM_WORLD, &rank);   // obtain rank
-	MPI_Comm_size(MPI_COMM_WORLD, &nprocs); // obtain number of processes
-
 	// parse given options
-	while ((opt = getopt(argc, argv, "h::r:w:a:i:R:n:l:o:s:S:c:t:m:")) != EOF) {
+	while ((opt = getopt(argc, argv, "h::r:w:x:i:R:n:l:o:s:S:e:t:m:")) != EOF) {
 		switch (opt) {
 			case 'h':
 				showUsage(argv);
@@ -97,6 +91,12 @@ int main(int argc, char** argv)
 		return -1;
 	}
 
+	// initialize MPI
+	int rank, nprocs;
+	MPI_Init(&argc, &argv);
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);   // obtain rank
+	MPI_Comm_size(MPI_COMM_WORLD, &nprocs); // obtain number of processes
+
 	// dimensions of dataset
 	int nrows = nprocs * num_iterations * num_requests * (num_reads + num_writes) * num_accesses;
 	int ncols = 9;
@@ -137,7 +137,7 @@ int main(int argc, char** argv)
 	}
 
 	if (rank == 0) {
-		rv = logData(data, params, output_file);
+		auto rv = logData(data, params, output_file);
 		free(data);
 	}
 
@@ -335,19 +335,16 @@ int logData(long *data, int *params, char *output_file)
 	// add dataset to c++ string
 	for (int i = 0; i < nrows * ncols;) {
 		line += std::to_string(data[i]);
-		line += (!(++i % ncols)) ? "\n" : ", ";
+		line += (++i % ncols) ? ", " : ",\n";
 	}
 	line += "\n";
 
 	// write to log
-	if (!(rv = fwrite((char *) line.c_str(), line.length(), 1, log))) {
+	if (!(rv = fwrite((char *) line.c_str(), line.length(), 1, log)))
 		std::cerr << "Failed to write to log\n";
-		fclose(log);
-		return -1;
-	}
 
 	fclose(log);
-	return 0;
+	return rv;
 }
 
 /*
@@ -462,7 +459,7 @@ void showUsage(char** argv)
 				<< "\t-h,\t\tPrint this help message\n"
 				<< "\t-r,\t\tNumber of reads [" << DEFAULT_READS << "]\n"
 				<< "\t-w,\t\tNumber of writes [" << DEFAULT_WRITES << "]\n"
-				<< "\t-a,\t\tAccess pattern\n"
+				<< "\t-x,\t\tAccess pattern\n"
 				<< "\t\t\t\t0 - [Sequential]\n"
 				<< "\t\t\t\t1 - Random\n"
 				<< "\t\t\t\t2 - Strided\n"
@@ -472,7 +469,7 @@ void showUsage(char** argv)
 				<< "\t-s,\t\tLower bound of I/O request size (e.g., 4, 8K, or 16M) [" << MIN_IOSIZE << "K]\n"
 				<< "\t-S,\t\tUpper bound of I/O request size (e.g., 4, 8K, or 16M) [" << MIN_IOSIZE << "K]\n"
 				<< "\t-l,\t\tStride length (access pattern=2) [" << DEFAULT_STRIDE << "B]\n"
-				<< "\t-c,\t\tCompute intensity\n"
+				<< "\t-e,\t\tCompute intensity\n"
 				<< "\t\t\t\t0 - None\n"
 				<< "\t\t\t\t1 - [Busy Sleep]\n"
 				<< "\t\t\t\t2 - Traditional\n"

@@ -11,6 +11,16 @@ to testing the [LABIOS](https://dl.acm.org/doi/abs/10.1145/3307681.3325405)
 I/O system. By obtaining performance metrics, the optimal configurations of
 different I/O systems can be discovered.
 
+## Building
+In order to compile Sonar generically, use the command:
+```bash
+mpicxx -o sonar sonar.cpp
+```
+or, for usage with LABIOS, use:
+```bash
+mpicxx -o sonar sonar.cpp -llabios -lnats -lmemcached
+```
+
 ## Configurable parameters:
 - Application Workload
   - Type of Workload (input as # of reads, # of writes)
