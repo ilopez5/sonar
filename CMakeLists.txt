@@ -4,17 +4,13 @@ cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
 # specify project name
 project(sonar)
 
-# MPICH
-find_package(MPI REQUIRED)
-include_directories(${MPI_INCLUDE_PATH})
-set(CMAKE_C_COMPILER mpicc)
-set(CMAKE_CXX_COMPILER mpicxx)
-
-# move to install/ directory
-set(CMAKE_INSTALL_DIR ~/documents/research/install)
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_INSTALL_DIR}/lib)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_INSTALL_DIR}/lib)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_INSTALL_DIR}/bin)
+# set install directory
+set(INSTALL_DIR $ENV{INSTALL_DIR})
+message(INFO "Installation Directory ${INSTALL_DIR}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -L${INSTALL_DIR}/lib -L${INSTALL_DIR}/lib64 -I${INSTALL_DIR}/include -I${INSTALL_DIR}/src/labios1.0/include -L${INSTALL_DIR}/src/labios1.0/build")
 
 # specify executable name
 add_executable(sonar sonar.cpp sonar.h)
+
+# link appropriate libraries
+target_link_libraries(sonar -llabios -lmpi -lmemcached -lnats)

@@ -1,4 +1,4 @@
-[![Generic badge](https://img.shields.io/badge/Stage-Development-blue.svg)](https://shields.io/)
+[![Generic badge](https://img.shields.io/badge/Stage-Testing-blue.svg)](https://shields.io/)
 
 # SONAR
 

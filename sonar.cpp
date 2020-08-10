@@ -4,9 +4,8 @@
 #include <mpi.h>
 #include <random>
 #include <iostream>
-// #include <labios.h>
+#include <labios.h>
 #include "sonar.h"
-
 
 /*
  *	main - driver for Sonar benchmark
@@ -41,7 +40,7 @@ int main(int argc, char** argv)
 			case 'w':
 				num_writes = std::atoi(optarg);
 				break;
-			case 'a':
+			case 'x':
 				t = std::atoi(optarg);
 				access_pattern = (t >= MIN_ACCESS && t <= MAX_ACCESS) ? t : access_pattern;
 				break;
@@ -69,7 +68,7 @@ int main(int argc, char** argv)
 				t = parseRequestSize(optarg);
 				io_max = (t >= MIN_IOSIZE && t <= MAX_IOSIZE) ? t : io_max;
 				break;
-			case 'c':
+			case 'e':
 				t = std::atoi(optarg);
 				intensity = (t <= MAX_INTENSITY && t >= MIN_INTENSITY) ? t : intensity;
 				break;
@@ -91,35 +90,36 @@ int main(int argc, char** argv)
 		return -1;
 	}
 
-	// initialize MPI
-	int rank, nprocs;
-	MPI_Init(&argc, &argv);
-	MPI_Comm_rank(MPI_COMM_WORLD, &rank);   // obtain rank
-	MPI_Comm_size(MPI_COMM_WORLD, &nprocs); // obtain number of processes
+    // initialize MPI
+    int my_rank, nprocs;
+
+    labios::MPI_Init(&argc,&argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);   // obtain my_rank
+    MPI_Comm_size(MPI_COMM_WORLD, &nprocs); // obtain number of processes
 
 	// dimensions of dataset
 	int nrows = nprocs * num_iterations * num_requests * (num_reads + num_writes) * num_accesses;
 	int ncols = 9;
 	long *data;
-	if (rank == 0)
+	if (my_rank == 0)
 		data = (long *) calloc(nrows * ncols, sizeof(long));
 
 	// store parameters, mpi variables, etc
 	int params[] =
 		{
-			num_iterations,
-			num_requests,
-			num_accesses,
-			num_reads,
-			num_writes,
-			access_pattern,
-			stride_length,
-			io_min,
-			io_max,
-			rank,
-			nprocs,
-			nrows,
-			ncols
+                num_iterations,
+                num_requests,
+                num_accesses,
+                num_reads,
+                num_writes,
+                access_pattern,
+                stride_length,
+                io_min,
+                io_max,
+                my_rank,
+                nprocs,
+                nrows,
+                ncols
 		};
 
 	// perform benchmark
@@ -136,13 +136,13 @@ int main(int argc, char** argv)
 			compute(intensity, sleep_time, matrix_size);
 	}
 
-	if (rank == 0) {
+	if (my_rank == 0) {
 		auto rv = logData(data, params, output_file);
 		free(data);
 	}
 
 	// clean up MPI
-	MPI_Finalize();
+    labios::MPI_Finalize();
 
 	return 0;
 }
@@ -179,7 +179,7 @@ int mainIO(int *params, long *data, long iteration, long request)
 		timings = (long *) calloc(nprocs, sizeof(long));
 
 	// open dump file
-	if (!(fp = fopen("sonar-dump", "w+b"))) {
+	if (!(fp = labios::fopen("sonar-dump", "w+b"))) {
 		std::cerr << "Failed to open/create dump file\n";
 		return -1;
 	}
@@ -189,7 +189,7 @@ int mainIO(int *params, long *data, long iteration, long request)
 
 	// perform write requests 'num_writes' times
 	for (int write = 0; write < num_writes; write++) {
-		io_size = random(io_min, io_max) / num_accesses;
+		io_size = random(io_min, io_max);
 
 		for (int access = 0; access < num_accesses; access++) {
 			wbuf = generateRandomBuffer(io_size);
@@ -197,18 +197,18 @@ int mainIO(int *params, long *data, long iteration, long request)
 			switch (access_pattern) {
 				case RANDOM:{
 					// seek to random offset % file size
-					fseek(fp, random(0, fbuf.st_size), SEEK_SET);
+					labios::fseek(fp, random(0, fbuf.st_size), SEEK_SET);
 					break;
 				}
 				case STRIDED:{
 					// set deliberate offset
-					fseek(fp, stride_length, SEEK_CUR);
+					labios::fseek(fp, stride_length, SEEK_CUR);
 					break;
 				}
 			}
 
 			auto start = Clock::now();
-			auto rv = fwrite(wbuf, 1, io_size, fp);
+			size_t rv = labios::fwrite(wbuf, 1, io_size, fp);
 			auto end = Clock::now();
 			auto duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
 
@@ -245,37 +245,37 @@ int mainIO(int *params, long *data, long iteration, long request)
 	if (fbuf.st_size < max_read) {
 		int diff = max_read - fbuf.st_size;
 		wbuf = generateRandomBuffer(diff);
-		size_t rv = fwrite(wbuf, 1, diff, fp);
+		size_t rv = labios::fwrite(wbuf, 1, diff, fp);
 		free(wbuf);
 	}
 
 	// reset offset
-	fseek(fp, 0, SEEK_SET);
+	labios::fseek(fp, 0, SEEK_SET);
 
 	// perform read requests 'num_reads' times
 	for (long read = 0; read < num_reads; read++) {
-		io_size = random(io_min, io_max) / num_accesses;
+		io_size = random(io_min, io_max);
 
 		for (long access = 0; access < num_accesses; access++) {
-
 			switch (access_pattern) {
 				case RANDOM:{
 					// get file size then seek to random offset
-					fseek(fp, random(0, fbuf.st_size), SEEK_SET);
+					labios::fseek(fp, random(0, fbuf.st_size), SEEK_SET);
 					break;
 				}
 				case STRIDED:{
 					// set deliberate offset
-					fseek(fp, stride_length, SEEK_CUR);
+					labios::fseek(fp, stride_length, SEEK_CUR);
 					break;
 				}
 			}
 
 			auto start = Clock::now();
-			auto rv = fread(rbuf, 1, io_size, fp);
+			size_t rv = labios::fread(rbuf, 1, io_size, fp);
 			auto end = Clock::now();
 			auto duration = std::chrono::duration_cast<Nanoseconds>(end-start).count();
 
+			// gather then store timings
 			MPI_Gather(&duration, 1, MPI_LONG, timings, 1, MPI_LONG, 0, MPI_COMM_WORLD);
 
 			if (rank == 0) {
@@ -302,7 +302,7 @@ int mainIO(int *params, long *data, long iteration, long request)
 		}
 	}
 
-	fclose(fp);
+	labios::fclose(fp);
 	free(rbuf);
 	if (rank == 0)
 		free(timings);
@@ -327,7 +327,7 @@ int logData(long *data, int *params, char *output_file)
 		line += "Processor, Iteration, Request, R/W, Read, Write, Access, Amount (B), Duration (ns)\n";
 
 	// open log file (in append mode)
-	if (!(log = fopen(output_file, "a+"))) {
+	if (!(log = std::fopen(output_file, "a+"))) {
 		std::cerr << "Failed to open/create log file: " << output_file << "\n";
 		return -1;
 	}
@@ -340,11 +340,11 @@ int logData(long *data, int *params, char *output_file)
 	line += "\n";
 
 	// write to log
-	if (!(rv = fwrite((char *) line.c_str(), line.length(), 1, log)))
+	if (!(rv = std::fwrite((char *) line.c_str(), line.length(), 1, log)))
 		std::cerr << "Failed to write to log\n";
 
-	fclose(log);
-	return rv;
+    std::fclose(log);
+	return (int) (rv) - 1;
 }
 
 /*
