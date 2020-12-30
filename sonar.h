@@ -31,13 +31,14 @@
 
 
 /* function prototypes */
-int mainIO(int*,long*,long,long);
-int logData(long*,int*,char*);
-int random(int,int);
-int parseRequestSize(char*);
+int  mainIO(long*,long,long);
+int  logData(long*);
+int  random(int,int);
+int  parseRequestSize(char*);
+void parseArgs(int,char**);
 void showUsage(char**);
-void compute(int,int,int);
-char* generateRandomBuffer(int);
+void compute();
+void generateRandomBuffer(char*,int);
 
 /* typedefs */
 typedef std::chrono::high_resolution_clock Clock;

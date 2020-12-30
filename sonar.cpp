@@ -51,7 +51,7 @@ int main(int argc, char** argv)
 	// perform benchmark
 	for (long i = 0; i < num_iterations; i++) {
 		for (long r = 0; r < num_requests; r++) {
-			if (mainIO(data, rank, i, r) < 0) {
+			if (mainIO(data, i, r) < 0) {
 				free(data);
 				return -1;
 			}
@@ -75,8 +75,9 @@ int main(int argc, char** argv)
 /*
  *  mainIO - performs the I/O requests
  */
-int mainIO(long *data, int rank, long iteration, long request)
+int mainIO(long *data, long iteration, long request)
 {
+	int io_size;
 	struct stat fbuf;
 	char *wbuf, *rbuf = (char *) malloc(io_max);
 
@@ -102,7 +103,7 @@ int mainIO(long *data, int rank, long iteration, long request)
 
 		for (int access = 0; access < num_accesses; access++) {
 			// populate buffer with random alphanumeric characters
-			generateRandomBuffer(wbuf);
+			generateRandomBuffer(wbuf, io_size);
 
 			switch (access_pattern) {
 				case RANDOM:{
@@ -155,7 +156,8 @@ int mainIO(long *data, int rank, long iteration, long request)
 	int max_read = io_max * num_iterations * num_requests * num_reads * num_accesses;
 	if (fbuf.st_size < max_read) {
 		int diff = max_read - fbuf.st_size;
-		generateRandomBuffer(wbuf);
+		wbuf = (char *) malloc(diff);
+		generateRandomBuffer(wbuf, diff);
 		fwrite(wbuf, 1, diff, fp);
 		free(wbuf);
 	}
@@ -324,7 +326,7 @@ int random(int min, int max)
 /*
  *  generateRandomBuffer - populate buffer with random alphanumeric characters
  */
-void generateRandomBuffer(char *rbuf)
+void generateRandomBuffer(char *rbuf, int size)
 {
 	// alphanumeric characters
 	char chars[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -345,7 +347,7 @@ void parseArgs(int argc, char **argv)
 		switch (opt) {
 			case 'h':
 				showUsage(argv);
-				return 0;
+				exit(0);
 			case 'r':
 				num_reads = std::atoi(optarg);
 				break;
